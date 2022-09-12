@@ -4,9 +4,10 @@ Glowing_Placenta_RNAseq_FCandLane <- read.csv("Glowing_Placenta_RNAseq_FCandLane
 nrow(Glowing_Placenta_RNAseq_FCandLane)
 meta_data = read.csv("metaDataGlowing-for-TME.csv", header = T)
 nrow(meta_data)
+
 #Compare two vectors of different length in R
 #only 118 IDs from meta data are represented in Glowing_Placenta_RNAseq_FCandLane 
-keep_IDs = which(meta_data$ID %in% Glowing_Placenta_RNAseq_FCandLane$Sample.ID == TRUE)
+#which(meta_data$ID %in% Glowing_Placenta_RNAseq_FCandLane$Sample.ID == TRUE)
 
 
 #not all samples have "G-" in Glowing_Placenta_RNAseq_FCandLane$Sample.ID
@@ -72,3 +73,79 @@ ggplot(data = meta_data_cp, aes(y = raw_counts,x = PrepID, color = PrepID)) + ge
 
 ggplot(data = meta_data_cp, aes(x = 1:141, y = raw_counts, color = PrepID)) + geom_point() + scale_x_continuous(breaks = c(1, 25, 50, 75,100, 125, 141 ), labels = c("G-114", "G-148" ,"G-188" ,"G-257" ,"G-312" ,"G-382", "G-419")  ) + labs(x = "IDs (ordered by row number")
 
+
+#create a new categorical variable that tags all of the samples with total reads under 10,000,000.
+meta_data_cp$read_counts_under_10M = meta_data_cp$raw_counts < 10000000 
+write.csv(meta_data_cp, file = "meta_data_cp_Sept9.csv", sep = ",", col.names = TRUE, row.names = FALSE)
+#Then make another PC1 v PC2 scatter plot color coded by this new variable.
+PCobj = prcomp(t(glowing_uq_vst), retx = T, center = T, scale. = T)
+PCs = PCobj$x
+ggplot(data = data.frame(PCs), aes(PC2, PC1 ,color = meta_data_cp$read_counts_under_10M)) + geom_point(aes(shape = meta_data_cp$PrepID),size = 4) + labs(title = "UQ and VST adjusted data")
+ggplot(data = data.frame(PCs), aes(PC2, PC1 ,color = meta_data_cp$PrepID)) + geom_point() + labs(title = "UQ and VST adjusted data")
+
+
+#remove outliers and see how that changes clustering 
+library(dplyr)
+row.names(meta_data_cp) = meta_data_cp$ID
+prep1_only = meta_data_cp %>% filter(PrepID == "prep1") 
+prep2_only = meta_data_cp %>% filter(PrepID == "prep2") 
+prep3_only = meta_data_cp %>% filter(PrepID == "prep3") 
+
+#outliers_prep1 = boxplot(prep1_only$raw_counts, plot=FALSE)$out #no outliers
+outliers_prep2 = boxplot(prep2_only$raw_counts, plot=FALSE)$out
+outliers_prep3 = boxplot(prep3_only$raw_counts, plot=FALSE)$out
+
+remove_prep2 = prep2_only %>% filter(prep2_only$raw_counts %in% outliers_prep2) %>% select(ID)
+remove_prep3 = prep3_only %>% filter(prep3_only$raw_counts %in% outliers_prep3) %>% select(ID)
+
+IDs_remove = c("G-123", "G-143", "G-185", "G-282", "G-289")
+
+not_normalized_outliers = select(GlowingPlacenta_RNAseq.rawCounts.nonZero.141.samples_copy, -c("G-123", "G-143", "G-185", "G-282", "G-289"))
+
+not_normalized_outliers$X = rownames(not_normalized_outliers)
+not_normalized_outliers = not_normalized_outliers %>% relocate(X)
+write.table(not_normalized_outliers, "raw_no_count_outliers_RNAseq.txt", row.names = F, col.names = T, sep = "\t")
+
+
+## redoing TRAPR_COMBAT 
+#total IDs is now 136
+row.names(meta_data_cp) = meta_data_cp$ID
+meta_data_cp = meta_data_cp[!(row.names(meta_data_cp) %in% IDs_remove),]
+
+Lean_ID = meta_data_cp[which(meta_data_cp$OfficialEnrollCategory == "Lean"), "ID"]
+Overweight_ID = meta_data_cp[which(meta_data_cp$OfficialEnrollCategory == "Overweight"), "ID"]
+
+Lean_ID_index = c()
+for (x in 1:length(Lean_ID)){ 
+  Lean_ID_index[x] = which(colnames(not_normalized_outliers) == Lean_ID[x])
+}
+
+Overweight_ID_index = c()
+for (x in 1:length(Overweight_ID)){ 
+  Overweight_ID_index[x] = which(colnames(not_normalized_outliers) == Overweight_ID[x])
+}
+
+Sample <- TRAPR.Data.ReadExpressionTable("raw_no_count_outliers_RNAseq.txt", sep = "\t", Exp1 = Lean_ID_index, Exp2 = Overweight_ID_index, Tag = c('Lean', 'Overweight'))
+
+nSample <- TRAPR.Normalize(Sample, Method = "UpperQuartile")
+
+vst_data = TRAPR.Transformation.VSN(nSample)
+
+
+
+#TRAPR.Data.DEGResulttoFile(vst_data, FileName = 'glowing_rnaseq_uq_vst.txt')
+library(sva)
+
+glowing_uq_vst = data.frame(vst_data$CurrentMatrix)
+row.names(glowing_uq_vst) = vst_data[["CurrentGene"]]
+colnames(glowing_uq_vst) = meta_data_cp$ID
+
+
+batch = meta_data_cp$PrepID
+row.names(meta_data_cp) = meta_data_cp$ID
+## Model matrix for batch-corrections (May need to adjust model matrix to 'protect' coefficients (study specific)):
+mod <- model.matrix(~1 + OfficialEnrollCategory, data=meta_data_cp)
+
+## Run ComBat to remove batch effects
+
+combat.adj = ComBat(glowing_uq_vst,batch = batch, mod = mod)
