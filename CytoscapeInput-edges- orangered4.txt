@@ -1,0 +1,1 @@
+fromNode	toNode	weight	direction	fromAltName	toAltName
