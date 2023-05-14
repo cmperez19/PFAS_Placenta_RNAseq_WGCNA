@@ -1,0 +1,375 @@
+```{r}
+load("april24_input.Rdata")
+library(ggplot2)
+library(tidyverse)
+library(visreg)
+module_Eigengenes = module_Eigengenes[which(row.names(module_Eigengenes) %in% pfas_df_cp$Name), ]
+PFASp = c("L-PFOA","PFHxS","PFNA","PFDA","s-PFOS","sum1", "sum2" )
+pheno = pheno[row.names(module_Eigengenes),]
+```
+#log2 pfas_df_cp 
+```{r}
+pfas_log2 = log2(pfas_df_cp[rownames(module_Eigengenes), PFASp])
+```
+
+#no covariates
+```{r}
+eigengene_PFAS = data.frame()
+
+for (i in 1:ncol(module_Eigengenes)) {
+  for (x in PFASp){
+    lm = summary(lm(module_Eigengenes[,i] ~ pfas_log2[,x]))$coefficients[2,4] 
+    df = data.frame(p.value = lm, module = colnames(module_Eigengenes)[i], PFAS = x)
+    eigengene_PFAS = rbind(eigengene_PFAS, df)
+    #eigengene_color_PFAS[paste0(colnames(module_Eigengenes_DynamicHybridTOM_subset)[i],x)] = summary(lm(module_Eigengenes_DynamicHybridTOM_subset[,i] ~ pheno[,x]))$coefficients[2,4] 
+  }
+}
+
+eigengene_PFAS = eigengene_PFAS %>% filter(.$p.value <= 0.05) %>% mutate(module = gsub("ME", "", .$module))
+
+
+eigengene_PFAS
+```
+
+
+#maternal age, maternal education, gestational age, maternal BMI, gestational weight gain, and ancestry probability
+```{r}
+eigengene_PFAS = data.frame()
+#139 profiles have RNA-seq data and PFAS 
+#add covariates to model from proposal (GA, maternal age, maternal weight gain, maternal education, PC1 from RNA-seq)
+#factor analysis between PFAS chemicals
+
+for (i in 1:ncol(module_Eigengenes)) {
+  for (x in PFASp){
+    lm = summary(lm(module_Eigengenes[,i] ~ pfas_log2[,x] + pheno$mom_age_at_birth + pheno$mom_education + pheno$gest_age_in_weeks_edd + pheno$MomBMI_36wks + pheno$Prob_Caucasian))$coefficients[2,4] 
+    df = data.frame(p.value = lm, module = colnames(module_Eigengenes)[i], PFAS = x)
+    eigengene_PFAS = rbind(eigengene_PFAS, df)
+  }
+}
+
+eigengene_PFAS = eigengene_PFAS %>% filter(.$p.value <= 0.05) %>% mutate(module = gsub("ME", "", .$module))
+
+
+eigengene_PFAS
+```
+#maternal age, maternal education, gestational age, maternal BMI, gestational weight gain,  ancestry probability, and neonate's sex 
+```{r}
+eigengene_PFAS = data.frame()
+for (i in 1:ncol(module_Eigengenes)) {
+  for (x in PFASp){
+    lm = summary(lm(module_Eigengenes[,i] ~ pfas_log2[,x] + pheno$mom_age_at_birth + pheno$mom_education + pheno$gest_age_in_weeks_edd + pheno$MomBMI_36wks + pheno$Prob_Caucasian + pheno$child_sex))$coefficients[2,4] 
+    df = data.frame(p.value = lm, module = colnames(module_Eigengenes)[i], PFAS = x)
+    eigengene_PFAS = rbind(eigengene_PFAS, df)
+  }
+}
+
+eigengene_PFAS = eigengene_PFAS %>% filter(.$p.value <= 0.05) %>% mutate(module = gsub("ME", "", .$module))
+
+
+eigengene_PFAS
+
+```
+```{r}
+combat.adj = combat.adj[row.names(module_Eigengenes),]
+pc <- prcomp(combat.adj)
+pc_data <- data.frame(pc$x) %>% select(PC1)
+```
+
+#just adding PC1 of RNAseq data as a covariate
+```{r}
+eigengene_PFAS = data.frame()
+
+for (i in 1:ncol(module_Eigengenes)) {
+  for (x in PFASp){
+    lm = summary(lm(module_Eigengenes[,i] ~ pfas_log2[,x] +pc_data$PC1))$coefficients[2,4] 
+    df = data.frame(p.value = lm, module = colnames(module_Eigengenes)[i], PFAS = x)
+    eigengene_PFAS = rbind(eigengene_PFAS, df)
+    #eigengene_color_PFAS[paste0(colnames(module_Eigengenes_DynamicHybridTOM_subset)[i],x)] = summary(lm(module_Eigengenes_DynamicHybridTOM_subset[,i] ~ pheno[,x]))$coefficients[2,4] 
+  }
+}
+
+eigengene_PFAS = eigengene_PFAS %>% filter(.$p.value <= 0.05) %>% mutate(module = gsub("ME", "", .$module))
+
+
+eigengene_PFAS
+```
+
+#mom age, mom education, GA, mom BMI @ 36 weeks, prob of caucasian, child sex, and pc1 of RNAseq data
+```{r}
+eigengene_PFAS = data.frame()
+
+for (i in 1:ncol(module_Eigengenes)) {
+  for (x in PFASp){
+    lm = summary(lm(module_Eigengenes[,i] ~ pfas_log2[,x] + pheno$mom_age_at_birth + pheno$mom_education + pheno$gest_age_in_weeks_edd + pheno$MomBMI_36wks + pheno$Prob_Caucasian + pheno$child_sex +pc_data$PC1))$coefficients[2,4] 
+    df = data.frame(p.value = lm, module = colnames(module_Eigengenes)[i], PFAS = x)
+    eigengene_PFAS = rbind(eigengene_PFAS, df)
+  }
+}
+
+eigengene_PFAS = eigengene_PFAS %>% filter(.$p.value <= 0.05) %>% mutate(module = gsub("ME", "", .$module))
+
+eigengene_PFAS
+```
+
+#ethnicity instead of caucasian probility 
+```{r}
+eigengene_PFAS = data.frame()
+
+for (i in 1:ncol(module_Eigengenes)) {
+  for (x in PFASp){
+    lm = summary(lm(module_Eigengenes[,i] ~ pfas_log2[,x] + pheno$mom_age_at_birth + pheno$mom_education + pheno$gest_age_in_weeks_edd + pheno$MomBMI_36wks + pheno$childs_ethnicity + pheno$child_sex +pc_data$PC1))$coefficients[2,4] 
+    df = data.frame(p.value = lm, module = colnames(module_Eigengenes)[i], PFAS = x)
+    eigengene_PFAS = rbind(eigengene_PFAS, df)
+  }
+}
+
+eigengene_PFAS = eigengene_PFAS %>% filter(.$p.value <= 0.05) %>% mutate(module = gsub("ME", "", .$module))
+
+
+eigengene_PFAS
+```
+
+#interaction between ethnicity and PFAS 
+If the Pr(>F) value is small (e.g., less than 0.05), then it suggests that the null hypothesis should be rejected in favor of the alternative hypothesis that the corresponding terms have a significant effect on the response variable.
+
+```{r}
+ethnicity = data.frame()
+for( i in 1:ncol(module_Eigengenes)){
+  for (x in PFASp){
+model2 <- summary(lm(module_Eigengenes[,i] ~ pfas_log2[,x] + pheno$childs_ethnicity + pfas_log2[,x]:pheno$childs_ethnicity))$coefficients[2,4]
+
+model1 <- summary(lm(module_Eigengenes[,i] ~ pfas_log2[,x] + pheno$childs_ethnicity))$coefficients[2,4]
+
+ #summary for one model at a time pull the coefficients at a time 
+ df = data.frame(model_1 = model1, model_2 = model2, module = colnames(module_Eigengenes)[i], PFAS =x)
+   ethnicity= rbind(ethnicity, df)
+}
+}
+
+ethnicity %>% filter(model_1 <= 0.05)
+
+```
+
+
+```{r}
+
+prob_caucasian = data.frame()
+for( i in 1:ncol(module_Eigengenes)){
+  for (x in PFASp){
+model2 <- summary(lm(module_Eigengenes[,i] ~ pfas_log2[,x] + pheno$Prob_Caucasian + pfas_log2[,x]:pheno$Prob_Caucasian))$coefficients[2,4]
+
+model1 <- summary(lm(module_Eigengenes[,i] ~ pfas_log2[,x] + pheno$Prob_Caucasian))$coefficients[2,4]
+
+ #summary for one model at a time pull the coefficients at a time 
+ df = data.frame(model_1 = model1, model_2 = model2, module = colnames(module_Eigengenes)[i], PFAS =x)
+   prob_caucasian= rbind(ethnicity, df)
+}
+}
+
+prob_caucasian %>% filter(model_1 <= 0.05)
+```
+#prob_african
+```{r}
+prob_african = data.frame()
+for( i in 1:ncol(module_Eigengenes)){
+  for (x in PFASp){
+model2 <- summary(lm(module_Eigengenes[,i] ~ pfas_log2[,x] + pheno$Prob_African + pfas_log2[,x]:pheno$Prob_African))$coefficients[2,4]
+
+model1 <- summary(lm(module_Eigengenes[,i] ~ pfas_log2[,x] + pheno$Prob_African))$coefficients[2,4]
+
+ #summary for one model at a time pull the coefficients at a time 
+ df = data.frame(model_1 = model1, model_2 = model2, module = colnames(module_Eigengenes)[i], PFAS =x)
+   prob_african= rbind(ethnicity, df)
+}
+}
+
+prob_african %>% filter(model_1 <= 0.05)
+```
+#prob_asian
+```{r}
+prob_asian = data.frame()
+for( i in 1:ncol(module_Eigengenes)){
+  for (x in PFASp){
+model2 <- summary(lm(module_Eigengenes[,i] ~ pfas_log2[,x] + pheno$Prob_Asian + pfas_log2[,x]:pheno$Prob_Asian))$coefficients[2,4]
+
+model1 <- summary(lm(module_Eigengenes[,i] ~ pfas_log2[,x] + pheno$Prob_Asian))$coefficients[2,4]
+
+ #summary for one model at a time pull the coefficients at a time 
+ df = data.frame(model_1 = model1, model_2 = model2, module = colnames(module_Eigengenes)[i], PFAS =x)
+   prob_asian= rbind(ethnicity, df)
+}
+}
+
+prob_asian %>% filter(model_1 <= 0.05)
+```
+
+```{r}
+module_Eigengenes$ID = row.names(module_Eigengenes)
+pfas_log2$ID = row.names(pfas_log2)
+
+merged_df <- left_join(module_Eigengenes, pfas_log2, by = "ID")
+colnames(merged_df)[24] = "participant_id"
+merged_df <- left_join(merged_df, pheno, by = "participant_id")
+```
+
+```{r}
+model <- lm(MEdarkturquoise ~ PFDA + mom_age_at_birth + mom_education + gest_age_in_weeks_edd + MomBMI_36wks + childs_ethnicity +child_sex + Prob_Caucasian, data = merged_df)
+
+visreg(model, "PFDA",by= "child_sex", data = merged_df)
+# Create a partial residual plot for the weight variable, adjusting for the effects of hp and qsec
+#visreg(model, "pfas_log2$PFDA", partial = c("pheno$mom_age_at_birth", "pheno$mom_education", "pheno$gest_age_in_weeks_edd" ,"pheno$MomBMI_36wks", "pheno$childs_ethnicity", "pheno$child_sex", "pc_data$PC1"))
+
+```
+#can explore hub genes and TF that are annotated within them
+```{r}
+visreg(model, "PFDA",by= "childs_ethnicity", data = merged_df)
+```
+```{r}
+visreg(model, "PFDA",by= "Prob_Caucasian", data = merged_df)
+```
+```{r}
+covariates = c("mom_age_at_birth", "mom_education", "gest_age_in_weeks_edd", "MomBMI_36wks", "childs_ethnicity", "child_sex", "Prob_Caucasian") 
+
+for ( i in covariates){
+  visreg(model, "PFDA",i, data = merged_df)
+}
+
+```
+
+```{r}
+covariates = c("mom_age_at_birth", "mom_education", "gest_age_in_weeks_edd", "MomBMI_36wks", "childs_ethnicity", "child_sex", "Prob_Caucasian") 
+
+for ( i in covariates){
+  visreg(model, i, data = merged_df)
+}
+
+```
+
+
+dark turqoise - should be  stratified by sex 
+
+combat.adj pc1 by sex and batch interrelated 
+#normalized mRNA expression data by sex and batch
+I am including all 141 samples 
+```{r}
+require(gridExtra)
+load("april24_input.Rdata")
+meta_data = read.csv("metaDataGlowing-for-TME.csv", header = T)
+rownames(meta_data) = meta_data$ID
+colnames(meta_data)[12] = "child_sex"
+
+# Calculate percentage of variance explained by each PC
+variance_explained <- pc$sdev^2 / sum(pc$sdev^2) * 100
+
+pc <- prcomp(combat.adj)
+pc_data <- data.frame(pc$x)
+# Create a new data frame with PC1, PC2, and sex columns
+df <- data.frame(pc1 = pc_data$PC1, pc2 = pc_data$PC2, sex =  meta_data[, "child_sex"],  prep = meta_data[,"PrepID"])
+# Create the scatter plot
+plot1 = ggplot(df, aes(x = pc1, y = pc2, color = sex)) +
+  geom_point() +
+    labs(x = paste0("PC1 ",round(variance_explained[1], 1), "%" ), y = paste0("PC2 ", round(variance_explained[2], 1), "%"), color = "sex") +
+  theme_classic()
+
+plot2 = ggplot(df, aes(x = pc1, y = pc2, color = prep)) +
+  geom_point() +
+  labs(x = paste0("PC1 ",round(variance_explained[1], 1), "%" ), y = paste0("PC2 ", round(variance_explained[2], 1), "%"), color = "prep") +
+  theme_classic()
+
+
+grid.arrange(plot1, plot2, ncol = 2)
+
+
+ggplot(df, aes(x = pc1, y = pc2, color = prep, shape = sex)) +
+  geom_point() +
+    labs(x = paste0("PC1 ",round(variance_explained[1], 1), "%" ), y = paste0("PC2 ", round(variance_explained[2], 1), "%"), color = "sex") +
+  theme_classic()
+
+```
+#conduct factor analysis
+test the hypothesis that x factor(s) are sufficient vs the alternative that more are required 
+p value is <0.0001 to support the alternative hypothesis 
+```{r}
+pfas = pfas_df_cp[,c(2:6)]
+factanal(pfas, factors = 1)
+
+
+factanal(pfas, factors = 2)
+
+```
+#non-detectablable to lowest detectable value in PFDA 
+```{r}
+#min(pfas_log2$PFDA)
+#pfas_log2[order(pfas_log2$PFDA), "PFDA"]
+pfas_log2 = log2(pfas_df_cp[rownames(module_Eigengenes), PFASp])
+pfas_log2$PFDA[which(pfas_log2$PFDA == min(pfas_log2$PFDA))] = -6.058894
+
+model = lm(module_Eigengenes$MEdarkturquoise ~ pfas_log2$PFDA + pheno$mom_age_at_birth + pheno$mom_education + pheno$gest_age_in_weeks_edd + pheno$MomBMI_36wks + pheno$childs_ethnicity+ pheno$child_sex +pc_data$PC1 + pheno$MomBMI_12wks)
+
+summary(model)
+
+df = data.frame(darkturquoise = module_Eigengenes$MEdarkturquoise, PFDA = pfas_log2$PFDA, sex = pheno$child_sex)
+
+ggplot(df, aes(PFDA, darkturquoise, color =sex)) + geom_point() + geom_abline(intercept = coef(model)[1], slope = coef(model)[2]) + geom_smooth(method="lm", se=F)
+
+```
+
+```{r}
+pfas_log2 = log2(pfas_df_cp[rownames(module_Eigengenes), PFASp])
+pfas_log2$PFDA[which(pfas_log2$PFDA == min(pfas_log2$PFDA))] = -6.058894
+
+model = lm(module_Eigengenes$MEblack ~ pfas_log2$PFDA + pheno$mom_age_at_birth + pheno$mom_education + pheno$gest_age_in_weeks_edd + pheno$MomBMI_36wks + pheno$childs_ethnicity+ pheno$child_sex +pc_data$PC1 + pheno$MomBMI_12wks)
+
+summary(model)
+
+df = data.frame(black = module_Eigengenes$MEblack, PFDA = pfas_log2$PFDA, sex = pheno$child_sex)
+
+ggplot(df, aes(PFDA, black, color = sex)) + geom_point() + geom_abline(intercept = coef(model)[1], slope = coef(model)[2]) + geom_smooth(method="lm", se=F)
+```
+
+
+#0.25 quantile regression (darkturquoise~PFDA)
+```{r}
+library(quantreg)
+pfas_log2 = log2(pfas_df_cp[rownames(module_Eigengenes), PFASp])
+
+model = rq(module_Eigengenes$MEdarkturquoise ~ pfas_log2$PFDA + pheno$mom_age_at_birth + pheno$mom_education + pheno$gest_age_in_weeks_edd + pheno$MomBMI_36wks + pheno$childs_ethnicity + pheno$child_sex + pheno$MomBMI_10wks +pc_data$PC1, tau = 0.25)
+
+summary(model)
+
+df = data.frame(darkturquoise = module_Eigengenes$MEdarkturquoise, PFDA = pfas_log2$PFDA)
+
+ggplot(df, aes(PFDA, darkturquoise)) + geom_point() + geom_abline(intercept = coef(model)[1], slope = coef(model)[2]) + geom_smooth(method="lm", se=F)
+```
+#0.50 quantile regression (darkturquoise~PFDA)
+```{r}
+model = rq(MEdarkturquoise ~ PFDA + mom_age_at_birth + mom_education + gest_age_in_weeks_edd + MomBMI_36wks + childs_ethnicity +child_sex + MomBMI_12wks, data = merged_df, tau = 0.50)
+
+summary(model)
+
+df = data.frame(darkturquoise = module_Eigengenes$MEdarkturquoise, PFDA = pfas_log2$PFDA)
+
+ggplot(df, aes(PFDA, darkturquoise)) + geom_point() + geom_abline(intercept = coef(model)[1], slope = coef(model)[2]) + geom_smooth(method="lm", se=F)
+
+visreg(model, darkturquoise)
+
+```
+
+repeat this with PFHxS 
+
+#pairs panel for PFAS log transformed - 
+```{r}
+pairs(pfas_log2[1:5])
+```
+
+```{r}
+library(GGally)
+
+#create pairs plot
+ggpairs(pfas_log2[1:5])
+```
+
+chage L-PFOA values to left of non detects to non detects 
+visreg for quantile regression 0.50 and 0.25 for dark turq 
+recode education - todd will send that 
+
