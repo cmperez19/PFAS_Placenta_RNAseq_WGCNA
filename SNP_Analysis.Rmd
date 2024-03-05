@@ -1,0 +1,498 @@
+```{r}
+ #VDR_SNPs <- read.delim("~/Downloads/Glowing_VDR_SNPs_20230922.txt")
+VDR_SNPs = VDR_SNPs[which(VDR_SNPs$participant_id %in% rownames(combat.adj)),]
+```
+
+
+
+```{r}
+
+#
+for (snp_col in colnames(VDR_SNPs)[-1]) {
+  print(snp_col)
+  cat("Frequency table for", snp_col, ":\n")
+  allele_counts <- table(unlist(strsplit(VDR_SNPs[[snp_col]], "")))
+  allele_frequencies <- allele_counts / sum(allele_counts)
+  df_freq <- data.frame(
+    Allele = names(allele_counts),
+    Frequency = allele_frequencies
+  )
+  
+  print(df_freq)
+  cat("\n")
+}
+
+```
+
+```{r}
+table(VDR_SNPs$rs7975232.Apa1)
+table(VDR_SNPs$rs1544410_Bsm1)
+table(VDR_SNPs$rs2228570.Fok1)
+table(VDR_SNPs$rs731236.Taq1)
+
+table(VDR_SNPs$rs1544410_Bsm1, VDR_SNPs$rs731236.Taq1, pheno_139[VDR_SNPs$participant_id, "childs_sex"] )
+```
+
+```{r}
+
+dominant_model <- VDR_SNPs %>%
+  mutate(
+    rs7975232.Apa1 = ifelse(.$rs7975232.Apa1 %in% c("AA", "AC"), 1, 0),
+    rs1544410_Bsm1 = ifelse(.$rs1544410_Bsm1 %in% c("TT", "CT"), 1, 0),
+    rs2228570.Fok1 = ifelse(.$rs2228570.Fok1 %in% c("AA", "GA"), 1, 0),
+    rs731236.Taq1 = ifelse(.$rs731236.Taq1 %in% c("GG", "AG"), 1, 0)
+  )
+
+recessive_model <- VDR_SNPs %>%
+  mutate(
+    rs7975232.Apa1 = ifelse(.$rs7975232.Apa1 == "AA", 1, 0),
+    rs1544410_Bsm1 = ifelse(.$rs1544410_Bsm1 == "TT", 1, 0),
+    rs2228570.Fok1 = ifelse(.$rs2228570.Fok1 == "AA", 1, 0),
+    rs731236.Taq1 = ifelse(.$rs731236.Taq1 == "GG", 1, 0)
+  )
+
+additive_model <- VDR_SNPs %>% mutate(
+    rs7975232.Apa1 = ifelse(.$rs7975232.Apa1 == "CC", 0, ifelse(.$rs7975232.Apa1 == "AC", 1, 2)),
+    rs1544410_Bsm1 = ifelse(.$rs1544410_Bsm1 == "CC", 0, ifelse(.$rs1544410_Bsm1 == "CT", 1, 2)),
+    rs2228570.Fok1 = ifelse(.$rs2228570.Fok1 == "GG", 0, ifelse(.$rs2228570.Fok1 == "GA", 1, 2)),
+    rs731236.Taq1 = ifelse(.$rs731236.Taq1 == "AA", 0, ifelse(.$rs731236.Taq1 == "AG", 1, 2))
+)
+```
+
+#dominant model VDR gene expression ~ factor(VDR SNPS)
+```{r}
+
+for(i in 2:5){
+  x = summary(lm(combat.adj[VDR_SNPs$participant_id,"VDR"] ~ factor(dominant_model[,i])))
+  print(x)
+}
+```
+
+#recessive model VDR gene expression ~ factor(VDR SNPs)
+```{r}
+for(i in 2:5){
+  x = summary(lm(combat.adj[VDR_SNPs$participant_id,"VDR"] ~ factor(recessive_model[,i])))
+  print(x)
+}
+```
+#additive model VDR gene expression ~ factor(VDR SNPs)
+```{r}
+for(i in 2:5){
+  print(colnames(additive_model)[i])
+  x = summary(lm(combat.adj[VDR_SNPs$participant_id,"VDR"] ~ factor(additive_model[,i] )  + pheno_139[VDR_SNPs$participant_id, "childs_sex"]))
+  print(x)
+}
+```
+#dominant model ME~ VDR snps 
+```{r}
+for ( i in 2:5){
+  x = summary(lm(eigengenes[VDR_SNPs$participant_id, "MEdarkred"] ~ factor(dominant_model[,i])))
+  print(x)
+}
+
+```
+#recessive model ME ~ VDR snps 
+```{r}
+for ( i in 2:5){
+  x = summary(lm(eigengenes[VDR_SNPs$participant_id, "MEdarkred"] ~ factor(recessive_model[,i])))
+  print(x)
+}
+```
+#additive model ME ~ VDR snps
+```{r}
+for ( i in 2:5){
+   print(colnames(additive_model)[i])
+  x = summary(lm(eigengenes[VDR_SNPs$participant_id, "MEdarkred"] ~ factor(additive_model[,i]) )) 
+  print(x)
+}
+```
+#additive model for MEdarkred ~ VDR snps * PFAS 
+```{r}
+for( i in colnames(log_pfas)){
+  for (j in 2:5){
+    print(j)
+    print(i)
+  x = summary(lm(eigengenes[VDR_SNPs$participant_id, "MEdarkred"] ~  log_pfas[VDR_SNPs$participant_id,i] * factor(additive_model[,j])))
+  print(x)
+}}
+```
+#additive model hub gene expression ~ VDR snps * PFAS
+```{r}
+#chooseTopHubInEachModule(datExpr = combat.adj, colorh = gene_color$color, power = 9)
+for ( i in 2:5){
+  x = summary(lm(combat.adj[VDR_SNPs$participant_id,"UTY"] ~ factor(additive_model[,i]) * pheno_139[VDR_SNPs$participant_id, "childs_sex"]))
+  print(x)
+}
+
+```
+
+#all TF enriched in darkred
+```{r}
+TF_enrichment = data.frame()
+load("DataFile_FinalTRN.RData")
+
+#unique(eigengene_PFAS$module)
+for ( i in "darkred"){
+  color = gene_color %>% filter(color == i) %>% pull(gene_name)
+  TFN = TRNModel %>% filter(.$targetGene %in% color) 
+  sorted_df = sort(table(TFN$TF), decreasing = TRUE)
+  sorted_df = as.data.frame(sorted_df)
+  colnames(sorted_df) = c("Variable", "Count")
+}
+```
+
+#t.test between male and females of enriched TF gene expression 
+```{r}
+for( i in sorted_df$Variable){
+ x =  t.test(combat.adj[which(pheno_139[,"childs_sex"] == "Male"), i], combat.adj[which(pheno_139[,"childs_sex"] == "Female"), i] )
+ if(x[["p.value"]] < 0.05){
+   print(i)
+   print(x) 
+ }
+}
+
+
+```
+
+```{r}
+df = data.frame(VDR_expression = combat.adj[VDR_SNPs$participant_id,"VDR"], Apa1 = factor(additive_model$rs7975232.Apa1), Bsm1 =  factor(additive_model$rs1544410_Bsm1), Fok1 = factor(additive_model$rs2228570.Fok1), Taq1 = factor(additive_model$rs731236.Taq1), PFOA = log_pfas[VDR_SNPs$participant_id, "L-PFOA"], PFHxS = log_pfas[VDR_SNPs$participant_id,"PFHxS"], PFNA = log_pfas[VDR_SNPs$participant_id,"PFNA"], PFDA = log_pfas[VDR_SNPs$participant_id,"PFDA"], PFOS = log_pfas[VDR_SNPs$participant_id,"s-PFOS"], darkredME = eigengenes[VDR_SNPs$participant_id,"MEdarkred"]) 
+
+
+```
+
+
+```{r}
+#library(rpart)
+#library(rpart.plot)
+fit2 <- rpart(VDR_expression ~ Apa1 + Bsm1 + Fok1 + Taq1 + sex + PFOA + PFHxS + PFNA + PFDA + PFOS, data = df, method="anova")
+
+
+par(mfrow=c(1,2)) # two plots on one page
+rsq.rpart(fit2) # visualize cross-validation results
+
+# plot tree
+rpart.plot(fit2, type = 3, digits =3)
+
+```
+
+```{r}
+fit <- rpart(darkredME ~ Apa1 + Bsm1 + Fok1 + Taq1 + sex + PFOA + PFHxS + PFNA + PFDA + PFOS, data = df, method="anova")
+
+
+par(mfrow=c(1,2)) # two plots on one page
+rsq.rpart(fit) # visualize cross-validation results
+
+# plot tree
+rpart.plot(fit, type = 3, digits =3, fallen.leaves = TRUE)
+```
+
+```{r}
+#library(qgcomp)
+#expnms a character vector with the names of the columns in the qdata that represent the exposures of interest 
+#qgcomp(VDR_expression ~ PFOA + PFHxS + PFNA + PFDA + PFOS + Apa1 + Bsm1 + Fok1 + Taq1 + sex, expnms = c("PFOA","PFHxS", "PFNA", "PFDA", "PFOS"), data = df, q = 4)
+
+qgcomp(darkredME ~ PFOA + PFHxS + PFNA + PFDA + PFOS + Apa1 + Bsm1 + Fok1 + Taq1 + sex, expnms = c("PFOA","PFHxS", "PFNA", "PFDA", "PFOS"), data = df, q = 4)
+```
+
+
+```{r}
+fit1<- qgcomp.cox.noboot(VDR_expression ~ PFOA + PFHxS + PFNA + PFDA + PFOS + Apa1 + Bsm1 + Fok1 + Taq1 + sex, expnms = c("PFOA","PFHxS", "PFNA", "PFDA", "PFOS"), data = df,, q=4)
+fit1
+```
+
+
+```{r}
+qgcomp(VDR_expression ~  PFOA + PFHxS + PFNA + PFDA + PFOS + sex,  data = df, q = 4)
+```
+
+```{r}
+#rownames(additive_model) = additive_model$participant_id
+qgcomp( darkredME ~ PFOA + PFHxS + PFNA + PFDA + PFOS + sex, expnms = c("PFOA","PFHxS", "PFNA", "PFDA", "PFOS"), data = df, q = 4)
+```
+
+
+```{r}
+contingency_table <- table(VDR_SNPs$rs7975232.Apa1, pheno_139[VDR_SNPs$participant_id, "childs_sex"])
+chi_square_test_Apa1 <- chisq.test(contingency_table)
+contingency_table
+chi_square_test_Apa1
+
+contingency_table <- table(VDR_SNPs$rs1544410_Bsm1, pheno_139[VDR_SNPs$participant_id, "childs_sex"])
+chi_square_test_Bsm1 <- chisq.test(contingency_table)
+contingency_table
+chi_square_test_Bsm1
+
+contingency_table <- table(VDR_SNPs$rs2228570.Fok1, pheno_139[VDR_SNPs$participant_id, "childs_sex"])
+chi_square_test_Fok1 <- chisq.test(contingency_table)
+contingency_table
+chi_square_test_Fok1
+
+contingency_table <- table(VDR_SNPs$rs731236.Taq1, pheno_139[VDR_SNPs$participant_id, "childs_sex"])
+chi_square_test_Taq1 <- chisq.test(contingency_table)
+contingency_table
+chi_square_test_Taq1
+```
+
+```{r}
+contingency_table <- table(VDR_SNPs$rs731236.Taq1, pheno_139[VDR_SNPs$participant_id, "childs_sex"])
+fisher.test(contingency_table)
+```
+
+
+```{r}
+test <- fisher.test(table(df$Bsm1, df$sex))
+ggbarstats(df, Bsm1, sex,  results.subtitle = FALSE,
+  subtitle = paste0(
+    "Fisher's exact test", ", p-value = ",
+    ifelse(test$p.value < 0.001, "< 0.001", round(test$p.value, 3))
+  ))
+```
+
+```{r}
+test <- fisher.test(table(df$Taq1, df$sex))
+ggbarstats(df, Taq1, sex,  results.subtitle = FALSE,
+  subtitle = paste0(
+    "Fisher's exact test", ", p-value = ",
+    ifelse(test$p.value < 0.001, "< 0.001", round(test$p.value, 3))
+  ))
+```
+```{r}
+recessive_model$sex = pheno_139[VDR_SNPs$participant_id, "childs_sex"]
+row.names(recessive_model) = recessive_model$participant_id
+
+test <- fisher.test(table(recessive_model$rs1544410_Bsm1, recessive_model$sex))
+ggbarstats(recessive_model, rs1544410_Bsm1, sex,  results.subtitle = FALSE,
+  subtitle = paste0(
+    "Homozygous Recessive Fisher's exact test", ", p-value = ",
+    ifelse(test$p.value < 0.001, "< 0.001", round(test$p.value, 3))
+  ))
+
+```
+
+```{r}
+
+
+test <- fisher.test(table(recessive_model$rs731236.Taq1, recessive_model$sex))
+ggbarstats(recessive_model, rs731236.Taq1, sex,  results.subtitle = FALSE,
+  subtitle = paste0(
+    "Homozygous Recessive Fisher's exact test", ", p-value = ",
+    ifelse(test$p.value < 0.001, "< 0.001", round(test$p.value, 3))
+  ))
+```
+
+```{r}
+dominant_model$sex = pheno_139[VDR_SNPs$participant_id, "childs_sex"]
+row.names(dominant_model) = dominant_model$participant_id
+
+test <- fisher.test(table(dominant_model$rs1544410_Bsm1, dominant_model$sex))
+ggbarstats(dominant_model, rs1544410_Bsm1, sex,  results.subtitle = FALSE,
+  subtitle = paste0(
+    "Homozygous Dominant Fisher's exact test", ", p-value = ",
+    ifelse(test$p.value < 0.001, "< 0.001", round(test$p.value, 3))
+  ))
+```
+
+```{r}
+
+
+test <- fisher.test(table(dominant_model$rs731236.Taq1, dominant_model$sex))
+ggbarstats(dominant_model, rs731236.Taq1, sex,  results.subtitle = FALSE,
+  subtitle = paste0(
+    "Homozygous Dominant Fisher's exact test", ", p-value = ",
+    ifelse(test$p.value < 0.001, "< 0.001", round(test$p.value, 3))
+  ))
+```
+
+
+```{r}
+f_pheno = pheno_139[which(pheno_139$childs_sex == "Female"),]
+
+m_pheno = pheno_139[which(pheno_139$childs_sex == "Male"),]
+
+pfas_f = log_pfas[which(pheno_139$childs_sex == "Female"),]
+  
+pfas_m = log_pfas[which(pheno_139$childs_sex == "Male"),]
+
+#eigengene_m = eigengenes[which(pheno_139$childs_sex == "Male"),]
+#eigengene_f = eigengenes[which(pheno_139$childs_sex == "Female"),]
+
+
+eigengene_PFAS_m<- data.frame()
+
+
+  for (x in colnames(log_pfas)[-6]){
+    model <- lm(combat.adj[which(pheno_139$childs_sex == "Male"), "VDR"] ~ log_pfas[rownames(m_pheno), x] + m_pheno$mom_age_at_birth + m_pheno$mom_education + m_pheno$gest_age_in_weeks_edd + m_pheno$MomBMI_36wks +  pc_data[which(pheno_139$childs_sex == "Male")])
+    lm_summary <- summary(model)
+    p_value <- lm_summary$coefficients[2,4]
+    estimate <- coef(model)[2]
+    df <- data.frame(p.value = p_value, estimate = estimate,  PFAS = x)
+    eigengene_PFAS_m <- rbind(eigengene_PFAS_m, df)
+  }
+
+
+ eigengene_PFAS_m 
+
+```
+```{r}
+eigengene_PFAS_f<- data.frame()
+
+
+  for (x in colnames(log_pfas)[-6]){
+    model <- lm(combat.adj[which(pheno_139$childs_sex == "Female"), "VDR"] ~ log_pfas[rownames(f_pheno), x] + f_pheno$mom_age_at_birth + f_pheno$mom_education + f_pheno$gest_age_in_weeks_edd + f_pheno$MomBMI_36wks +  pc_data[which(pheno_139$childs_sex == "Female")])
+    lm_summary <- summary(model)
+    p_value <- lm_summary$coefficients[2,4]
+    estimate <- coef(model)[2]
+    df <- data.frame(p.value = p_value, estimate = estimate, PFAS = x)
+    eigengene_PFAS_f <- rbind(eigengene_PFAS_f, df)
+  }
+
+
+ 
+
+
+ eigengene_PFAS_f 
+
+```
+
+#TFN enrichment of all modules 
+```{r}
+#library(openxlsx)
+#library(dplyr)
+
+excel_file <- "/Users/cynthiaperez/WGCNA_PFAS/TF_Enrichment_All_Modules.xlsx"
+wb <- createWorkbook()
+
+TF_enrichment = data.frame()
+load("DataFile_FinalTRN.RData")
+for(module in unique(gene_color$color)){
+  color = gene_color %>% filter(color == module) %>% pull(gene_name)
+  TFN = TRNModel %>% filter(.$targetGene %in% color) 
+  sorted_df = sort(table(TFN$TF), decreasing = TRUE)
+  sorted_df = as.data.frame(sorted_df)
+  colnames(sorted_df) = c("Variable", "Count")
+  
+  
+  addWorksheet(wb, sheetName = paste0(module))
+  writeData(wb, sheet = paste0(module), sorted_df)
+}
+
+saveWorkbook(wb, excel_file)
+
+# Create a new workbook
+
+#add p values and statistic of fisher's exact test 
+
+
+
+```
+
+# explore qgcomp for module ~ pfas mixtures 
+
+# latent class analysis
+
+
+```{r}
+df = data.frame(VDR_expression = combat.adj[VDR_SNPs$participant_id,"VDR"], Apa1 = factor(additive_model$rs7975232.Apa1), Bsm1 =  factor(additive_model$rs1544410_Bsm1), Fok1 = factor(additive_model$rs2228570.Fok1), Taq1 = factor(additive_model$rs731236.Taq1), PFOA = log_pfas[VDR_SNPs$participant_id, "L-PFOA"], PFHxS = log_pfas[VDR_SNPs$participant_id,"PFHxS"], PFNA = log_pfas[VDR_SNPs$participant_id,"PFNA"], PFDA = log_pfas[VDR_SNPs$participant_id,"PFDA"], PFOS = log_pfas[VDR_SNPs$participant_id,"s-PFOS"], darkredME = eigengenes[VDR_SNPs$participant_id,"MEdarkred"])
+
+
+pheno_99 <- pheno_139 %>% filter(.$participant_id %in% VDR_SNPs$participant_id)
+
+pheno_99 <- cbind(pheno_99, df)
+
+pheno_99 <- cbind(pheno_99, pc_data[VDR_SNPs$participant_id])
+colnames(pheno_99)[61] = "pc_data"
+```
+
+
+#qgcomp with all the variables but when adding snps the association is gone 
+```{r}
+qgcomp(darkredME ~ PFOA + PFHxS + PFNA + PFDA + PFOS + Apa1 + Bsm1 + Fok1 + Taq1 + childs_sex + MomBMI_10wks + MomBMI_36wks + official_enroll_category + mom_education + pc_data + gest_age_in_weeks_edd, expnms = c("PFOA","PFHxS", "PFNA", "PFDA", "PFOS"), data = pheno_99, q = 4)
+```
+
+
+```{r}
+#install.packages("poLCA")
+#library(poLCA)
+f <- cbind(Apa1, Bsm1, Fok1, Taq1) ~ 1 
+
+M1 = poLCA(f, data = pheno_99, nclass = 2, graphs = TRUE)
+M2 = poLCA(f, data = pheno_99, nclass = 3, graphs = TRUE)
+M3 = poLCA(f, data = pheno_99, nclass = 4, graphs = TRUE)
+```
+
+
+```{r}
+#The following line give the classification in terms of predicted probabilities
+pheno_99$predclass = M2$predclass
+
+
+summary(lm(combat.adj[VDR_SNPs$participant_id,"VDR"] ~  factor(pheno_99$predclass) + pheno_99$childs_sex))
+
+
+
+```
+
+```{r}
+
+ summary(lm( eigengenes[VDR_SNPs$participant_id, "MEdarkred"] ~ factor(pheno_99$predclass) + pheno_99$childs_sex))
+
+```
+
+```{r}
+for( i in c("Apa1", "Bsm1", "Taq1", "Fok1")){
+   x = summary(lm(pheno_99$birth_len_cm ~ factor(pheno_99[,i]) + factor(pheno_99$predclass) + pheno_99$childs_sex))
+
+print(x)
+}
+```
+
+
+```{r}
+  # Run the qgcomp function
+qgcomp(darkredME ~  PFOA + PFHxS + PFNA + PFDA + PFOS + predclass + Apa1 + Taq1 + Bsm1 + Fok1 + childs_sex, expnms = c("PFOA", "PFHxS", "PFNA", "PFDA", "PFOS"), data = pheno_99, q = 4)
+
+qgcomp(VDR_expression ~  PFOA + PFHxS + PFNA + PFDA + PFOS + predclass + Apa1 + Taq1 + Bsm1 + Fok1 + childs_sex, expnms = c("PFOA", "PFHxS", "PFNA", "PFDA", "PFOS"), data = pheno_99, q = 4)
+```
+
+
+
+```{r}
+p = cbind(pheno_139, log_pfas)
+p = cbind(p, eigengenes)
+p = cbind(p, pc_data)
+colnames(p)[50] = "PFOA"
+colnames(p)[54] = "PFOS"
+
+p = p[which(p$childs_sex == "Female"), ]
+
+mix_results_female <- list()
+
+for( i in colnames(eigengenes)){
+
+  formula <- as.formula(paste(i, "~ PFOA + PFHxS + PFNA + PFDA + PFOS + MomBMI_10wks + MomBMI_36wks + official_enroll_category + mom_education + pc_data + gest_age_in_weeks_edd"))
+  
+  # Run the qgcomp function
+  result <- qgcomp(formula, expnms = c("PFOA", "PFHxS", "PFNA", "PFDA", "PFOS"), data = p, q = 4)
+  
+  if (result[["pval"]][2] < 0.05){
+    mix_results_female[[i]] <- result
+  }
+  # Store the result in the list
+  
+}
+
+mix_results_female
+
+```
+
+
+
+
+```{r}
+mix_results_male
+```
+
+```{r}
+
+```
+

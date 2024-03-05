@@ -1,0 +1,629 @@
+---
+title: "PFAS_eigengene_analysis"
+output: html_document
+date: "2023-06-8"
+---
+```{r}
+library(tidyverse)
+library(gprofiler2)
+library(dplyr)
+load("combat.adj.Rdata")
+load("eigengnes_spearman_9.Rdata")
+load("log_PFAS_pheno.Rdata")
+
+#("G-155","G-157") are not in the pfas data 
+combat.adj = t(combat.adj)
+combat.adj = combat.adj[!row.names(combat.adj) %in% c("G-155","G-157"),]
+eigengenes = module_Eigengenes$eigengenes
+eigengenes = eigengenes[!row.names(eigengenes) %in% c("G-155","G-157"),]
+
+pc <- prcomp(combat.adj)
+pc_data = pc$x
+pc_data = pc_data[,"PC1"]
+
+
+PFASp = c("L-PFOA","PFHxS","PFNA","PFDA","s-PFOS")
+log_pfas = log_pfas[rownames(eigengenes),PFASp]
+pheno_139 = pheno[rownames(eigengenes),]
+
+#pheno_139 = pheno_139[-37,]
+#pc_data = pc_data[-37]
+#log_pfas = log_pfas[-37,]
+#eigengenes = eigengenes[-37,]
+
+```
+
+
+```{r}
+xist_sex = data.frame(sex = pheno_139$childs_sex, XIST = combat.adj[,"XIST"], PFNA = log_pfas$PFNA, ID = pheno_139$participant_id)
+
+ggplot(data = xist_sex, aes(x = PFNA, y = XIST, color = sex, )) + geom_point() + geom_text(aes(label=ifelse(sex == "Male" & XIST >12 ,as.character(ID),'')),hjust=0,vjust=0)
+```
+
+
+
+```{r}
+library(reshape2)
+cor_pfas = cor(log_pfas)
+
+cor_melt <- melt(cor_pfas)
+
+
+
+ggplot(cor_melt, aes(x = Var1, y = Var2, fill = value)) +
+  geom_tile() +
+  geom_text(aes(label = round(value, 2)), size = 4) +  # Adding correlation values with label size = 10
+  scale_fill_gradient2(low = "blue", mid = "white", high = "red", midpoint = 0) +
+  theme_minimal() +
+  labs(x = "", y = "") +
+  theme(axis.text.x = element_text(angle = 45, vjust = 1, hjust = 1, size = 12),  # Adjust x-axis text size
+        axis.text.y = element_text(size = 12), legend.text = element_text(size = 10))  # Adjust y-axis text size
+
+```
+
+```{r}
+library(corrplot)
+
+corrplot(cor_pfas, method = 'number', order = 'FPC', type = 'upper', diag = FALSE)
+```
+
+
+#eigengenes and pfas 
+```{r}
+eigengene_PFAS <- data.frame()
+
+
+for (i in 1:ncol(eigengenes)) {
+  for (x in PFASp){
+    model <- lm(eigengenes[, i] ~ log_pfas[, x] + pheno_139$mom_age_at_birth + pheno_139$mom_education + pheno_139$gest_age_in_weeks_edd + pheno_139$MomBMI_36wks +  pheno_139$childs_sex + pheno_139$MomBMI_10wks + pheno_139$official_enroll_category+ pc_data)
+    lm_summary <- summary(model)
+    p_value <- lm_summary$coefficients[2,4]
+    estimate <- coef(model)[2]
+    df <- data.frame(p.value = p_value, estimate = estimate, module = colnames(eigengenes)[i], PFAS = x)
+    eigengene_PFAS <- rbind(eigengene_PFAS, df)
+  }
+}
+
+
+eigengene_PFAS$FDR = p.adjust(eigengene_PFAS$p.value, method = "fdr", n =105)
+
+ eigengene_PFAS %>%
+  filter(FDR <= 0.05) %>%
+  mutate(module = gsub("ME", "", module))
+ 
+```
+#fdr of eigengene ~PFAS linear regression models 
+```{r}
+
+```
+
+
+
+#birth lenght, birth weight, and GA as outcomes (module eigengenes not included in model)
+```{r}
+birthlength = data.frame()
+for (x in PFASp){
+     model <- lm( pheno_139$birth_len_cm ~ log_pfas[,x] + pheno_139$mom_age_at_birth + pheno_139$mom_education + pheno_139$gest_age_in_weeks_edd + pheno_139$MomBMI_36wks +  pheno_139$childs_sex + pc_data)
+    lm_summary <- summary(model)
+    p_value <- lm_summary$coefficients[2,4]
+    estimate <- coef(model)[2]
+    df <- data.frame(p.value = p_value, estimate = estimate, outcome = "Birth Length" , PFAS = x)
+    birthlength <- rbind(birthlength, df)
+}
+
+birthlength %>% filter(p.value <= 0.05)
+
+birthweight = data.frame()
+for (x in PFASp){
+     model <- lm( pheno_139$birth_wt_kg ~ log_pfas[, x] + pheno_139$mom_age_at_birth + pheno_139$mom_education + pheno_139$gest_age_in_weeks_edd + pheno_139$MomBMI_36wks +  pheno_139$childs_sex + pc_data)
+    lm_summary <- summary(model)
+    p_value <- lm_summary$coefficients[2,4]
+    estimate <- coef(model)[2]
+    df <- data.frame(p.value = p_value, estimate = estimate, outcome = "Birthweight" , PFAS = x)
+    birthweight <- rbind(birthweight, df)
+}
+
+birthweight %>% filter(p.value <= 0.05)
+
+GA = data.frame()
+for (x in PFASp){
+     model <- lm(pheno_139$gest_age_in_weeks_edd ~ log_pfas[, x] + pheno_139$mom_age_at_birth + pheno_139$mom_education +  pheno_139$MomBMI_36wks +  pheno_139$childs_sex + pc_data)
+    lm_summary <- summary(model)
+    p_value <- lm_summary$coefficients[2,4]
+    estimate <- coef(model)[2]
+    df <- data.frame(p.value = p_value, estimate = estimate, outcome = "GA" , PFAS = x)
+    GA <- rbind(GA, df)
+}
+
+GA %>% filter(p.value <= 0.05)
+```
+
+```{r}
+birthlength = data.frame()
+for (x in PFASp){
+  for (i in 1:ncol(eigengenes)) {
+     model <- lm( pheno_139$birth_len_cm ~ log_pfas[, x] + eigengenes[,i]+ pheno_139$mom_age_at_birth + pheno_139$mom_education + pheno_139$gest_age_in_weeks_edd + pheno_139$MomBMI_36wks +  pheno_139$childs_sex + pc_data)
+    lm_summary <- summary(model)
+    p_value <- lm_summary$coefficients[2,4]
+    estimate <- coef(model)[2]
+    df <- data.frame(p.value = p_value, estimate = estimate, outcome = "Birth Length" , PFAS = x, module = colnames(eigengenes)[i])
+    birthlength <- rbind(birthlength, df)
+  }
+}
+
+birthlength %>% filter(p.value <= 0.05)
+
+birthweight = data.frame()
+for (x in PFASp){
+  for (i in 1:ncol(eigengenes)) {
+     model <- lm( pheno_139$birth_wt_kg ~ log_pfas[, x] + eigengenes[,i] + pheno_139$mom_age_at_birth + pheno_139$mom_education + pheno_139$gest_age_in_weeks_edd + pheno_139$MomBMI_36wks +  pheno_139$childs_sex + pc_data)
+    lm_summary <- summary(model)
+    p_value <- lm_summary$coefficients[2,4]
+    estimate <- coef(model)[2]
+    df <- data.frame(p.value = p_value, estimate = estimate, outcome = "Birthweight" , PFAS = x, module =colnames(eigengenes)[i])
+    birthweight <- rbind(birthweight, df)
+  }}
+
+birthweight %>% filter(p.value <= 0.05)
+
+GA = data.frame()
+for (x in PFASp){
+  for (i in 1:ncol(eigengenes)) {
+     model <- lm(pheno_139$gest_age_in_weeks_edd ~ log_pfas[, x] + eigengenes[,i] + pheno_139$mom_age_at_birth + pheno_139$mom_education + pheno_139$MomBMI_36wks +  pheno_139$childs_sex + pc_data)
+    lm_summary <- summary(model)
+    p_value <- lm_summary$coefficients[2,4]
+    estimate <- coef(model)[2]
+    df <- data.frame(p.value = p_value, estimate = estimate, outcome = "GA" , PFAS = x, module =colnames(eigengenes)[i])
+    GA <- rbind(GA, df)
+}}
+
+GA %>% filter(p.value <= 0.05) %>% mutate(module = gsub("ME", "", module))
+```
+
+#dataframes for sex stratification created used first for GA 
+```{r}
+f_pheno = pheno_139[which(pheno_139$childs_sex == "Female"),]
+
+m_pheno = pheno_139[which(pheno_139$childs_sex == "Male"),]
+
+pfas_f = log_pfas[which(pheno_139$childs_sex == "Female"),]
+  
+pfas_m = log_pfas[which(pheno_139$childs_sex == "Male"),]
+
+eigengene_m = eigengenes[which(pheno_139$childs_sex == "Male"),]
+eigengene_f = eigengenes[which(pheno_139$childs_sex == "Female"),]
+
+GA_f = data.frame()
+for (x in PFASp){
+  for (i in 1:ncol(eigengenes)) {
+     model <- lm(f_pheno$gest_age_in_weeks_edd ~ pfas_f[, x] + eigengene_f[,i] + f_pheno$mom_age_at_birth + f_pheno$mom_education + f_pheno$MomBMI_36wks + pc_data[which(pheno_139$childs_sex == "Female")])
+    lm_summary <- summary(model)
+    p_value <- lm_summary$coefficients[2,4]
+    estimate <- coef(model)[2]
+    df <- data.frame(p.value = p_value, estimate = estimate, outcome = "GA" , PFAS = x, module =colnames(eigengene_f)[i])
+    GA_f <- rbind(GA_f, df)
+}}
+
+GA_f %>% filter(p.value <= 0.05) %>% mutate(module = gsub("ME", "", module))
+
+GA_m = data.frame()
+for (x in PFASp){
+  for (i in 1:ncol(eigengenes)) {
+     model <- lm(m_pheno$gest_age_in_weeks_edd ~ pfas_m[, x] + eigengene_m[,i] + m_pheno$mom_age_at_birth + m_pheno$mom_education + m_pheno$MomBMI_36wks + pc_data[which(pheno_139$childs_sex == "Male")])
+    lm_summary <- summary(model)
+    p_value <- lm_summary$coefficients[2,4]
+    estimate <- coef(model)[2]
+    df <- data.frame(p.value = p_value, estimate = estimate, outcome = "GA" , PFAS = x, module =colnames(eigengene_m)[i])
+    GA_m <- rbind(GA_m, df)
+}}
+
+GA_m %>% filter(p.value <= 0.05) %>% mutate(module = gsub("ME", "", module))
+
+
+```
+
+#birth weight stratified by sex 
+```{r}
+BW_f = data.frame()
+for (x in PFASp){
+  for (i in 1:ncol(eigengenes)) {
+     model <- lm(f_pheno$birth_wt_kg ~ pfas_f[, x] + eigengene_f[,i] + f_pheno$gest_age_in_weeks_edd + f_pheno$mom_age_at_birth + f_pheno$mom_education + f_pheno$MomBMI_36wks + pc_data[which(pheno_139$childs_sex == "Female")])
+    lm_summary <- summary(model)
+    p_value <- lm_summary$coefficients[2,4]
+    estimate <- coef(model)[2]
+df <- data.frame(p.value = p_value, estimate = estimate, outcome = "BW" , PFAS = x, module=colnames(eigengene_f)[i])
+BW_f <- rbind(BW_f, df)
+  }
+    }
+
+BW_f %>% filter(p.value <= 0.05) %>% mutate(module = gsub("ME", "", module))
+
+BW_m = data.frame()
+for (x in PFASp){
+  for (i in 1:ncol(eigengenes)) {
+     model <- lm(m_pheno$birth_wt_kg ~ pfas_m[, x] + eigengene_m[,i] + m_pheno$gest_age_in_weeks_edd + m_pheno$mom_age_at_birth + m_pheno$mom_education + m_pheno$MomBMI_36wks + pc_data[which(pheno_139$childs_sex == "Male")])
+    lm_summary <- summary(model)
+    p_value <- lm_summary$coefficients[2,4]
+    estimate <- coef(model)[2]
+    df <- data.frame(p.value = p_value, estimate = estimate, outcome = "BW" , PFAS = x, module =colnames(eigengene_m)[i])
+    BW_m <- rbind(BW_m, df)
+    
+  }
+  }
+
+BW_m %>% filter(p.value <= 0.05) %>% mutate(module = gsub("ME", "", module))
+```
+
+#BL regression analysis stratified by sex
+```{r}
+BL_f = data.frame()
+for (x in PFASp){
+  for (i in 1:ncol(eigengenes)) {
+     model <- lm(f_pheno$birth_len_cm ~ pfas_f[, x] + eigengene_f[,i] + f_pheno$gest_age_in_weeks_edd + f_pheno$mom_age_at_birth + f_pheno$mom_education + f_pheno$MomBMI_36wks + pc_data[which(pheno_139$childs_sex == "Female")])
+    lm_summary <- summary(model)
+    p_value <- lm_summary$coefficients[2,4]
+    estimate <- coef(model)[2]
+    df <- data.frame(p.value = p_value, estimate = estimate, outcome = "BL" , PFAS = x, module=colnames(eigengene_f)[i])
+    BL_f <- rbind(BL_f, df)
+}}
+
+BL_f %>% filter(p.value <= 0.05)
+
+BL_m = data.frame()
+for (x in PFASp){
+  for (i in 1:ncol(eigengenes)) {
+     model <- lm(m_pheno$birth_len_cm ~ pfas_m[, x] + eigengene_m[,i] + m_pheno$gest_age_in_weeks_edd + m_pheno$mom_age_at_birth + m_pheno$mom_education + m_pheno$MomBMI_36wks + pc_data[which(pheno_139$childs_sex == "Male")])
+    lm_summary <- summary(model)
+    p_value <- lm_summary$coefficients[2,4]
+    estimate <- coef(model)[2]
+    df <- data.frame(p.value = p_value, estimate = estimate, outcome = "BL" , PFAS = x, module =colnames(eigengene_m)[i])
+    BL_m <- rbind(BL_m, df)
+}}
+
+BL_m %>% filter(p.value <= 0.05)
+```
+
+#quantile regression 
+```{r}
+library(quantreg)
+
+df_50 = data.frame()
+for( i in 1:ncol(eigengenes)){
+  model <- rq(eigengenes[,i] ~ log_pfas[,"PFDA"] + pheno_139$mom_age_at_birth + pheno_139$mom_education + pheno_139$gest_age_in_weeks_edd + pheno_139$MomBMI_36wks + pheno_139$childs_sex + pc_data, tau = 0.50)
+  rq_summary = summary(model, se= "nid")
+  p_value <- rq_summary$coefficients[2,4]
+    estimate <- coef(model)[2]
+    df <- data.frame(p.value = p_value, estimate = estimate, module=colnames(eigengenes)[i])
+   df_50 <- rbind(df_50, df)
+}
+
+df_50 = df_50 %>% filter(p.value <= 0.05) %>% mutate(module = gsub("ME", "", module))
+
+df_75 = data.frame()
+for( i in 1:ncol(eigengenes)){
+  model <- rq(eigengenes[,i] ~ log_pfas[,"PFDA"] + pheno_139$mom_age_at_birth + pheno_139$mom_education + pheno_139$gest_age_in_weeks_edd + pheno_139$MomBMI_36wks + pheno_139$childs_sex + pc_data, tau = 0.75)
+  rq_summary = summary(model, se= "nid")
+   p_value <- rq_summary$coefficients[2,4]
+    estimate <- coef(model)[2]
+    df <- data.frame(p.value = p_value, estimate = estimate, module=colnames(eigengenes)[i])
+   df_75 <- rbind(df_75, df)
+}
+
+df_75 = df_75 %>% filter(p.value <= 0.05) %>% mutate(module = gsub("ME", "", module))
+```
+
+#eigengenes~PFAS model with interaction between pfas and sex 
+```{r}
+eigengene_PFAS_sex <- data.frame()
+
+for (i in 1:ncol(eigengenes)){
+  for (x in PFASp){
+    model <- lm(eigengenes[,i] ~ log_pfas[,x] + pheno_139$childs_sex + pheno_139$mom_age_at_birth + pheno_139$mom_education + pheno_139$gest_age_in_weeks_edd + pheno_139$MomBMI_36wks + + pheno_139$MomBMI_10wks + pheno_139$official_enroll_category + pc_data + pheno_139$childs_sex:log_pfas[,x])
+    lm_summary <- summary(model)
+    p_value <- lm_summary$coefficients[12,4]
+    df <- data.frame(p.value = p_value, module = colnames(eigengenes)[i], PFAS = x)
+    eigengene_PFAS_sex <- rbind(eigengene_PFAS_sex, df)
+ }
+}
+
+#eigengene_PFAS_sex %>% filter(.$p.value <= 0.05)
+
+eigengene_PFAS_sex$p.adjust = p.adjust(eigengene_PFAS_sex$p.value, method = "fdr", n =105)
+
+eigengene_PFAS_sex %>% filter(.$p.adjust <= 0.05)
+
+```
+
+#enrichment analysis with TFN 
+```{r}
+TF_enrichment = data.frame()
+load("DataFile_FinalTRN.RData")
+
+#unique(eigengene_PFAS$module)
+for ( i in "darkred"){
+  color = gene_color %>% filter(color == i) %>% pull(gene_name)
+  TFN = TRNModel %>% filter(.$targetGene %in% color) 
+  sorted_df = sort(table(TFN$TF), decreasing = TRUE)
+  sorted_df = as.data.frame(sorted_df)
+  colnames(sorted_df) = c("Variable", "Count")
+  
+  in_module = sorted_df[1, "Variable"] %in% color
+  
+  ppars = sorted_df %>% filter(grepl("PPAR", Variable)) 
+  if(nrow(ppars) == 0){
+     df= data.frame(top_TF = sorted_df[1, "Variable"], PPARA = 0, PPARD = 0, PPARG = 0, top_TF_module= in_module,  top_TF_num = sorted_df[1, "Count"], module = i)
+  } else {
+    rownames(ppars) = ppars$Variable
+    df= data.frame(top_TF = sorted_df[1, "Variable"], PPARA = ppars["PPARA","Count"], PPARD = ppars["PPARD","Count"], PPARG =ppars["PPARG","Count"], top_TF_module= in_module, top_TF_num = sorted_df[1, "Count"], module = i)
+  }
+  
+TF_enrichment  = rbind(TF_enrichment, df)
+}
+
+
+TF_enrichment[is.na(TF_enrichment)] <- 0
+
+TF_enrichment
+```
+
+# analysis of dark turquoise (violin plots)
+```{r}
+library(biomaRt)
+library(cowplot)
+
+ensembl=useMart("ensembl")
+
+
+ensembl=useDataset("hsapiens_gene_ensembl",mart = ensembl)
+ensembl.ids = colnames(combat.adj)
+
+# hgnc_symbol = refseq gene name?
+#everywhere with ensembl_gene_id change to hgnc_symbol
+ensembl.genes <- getBM(attributes = c('hgnc_symbol', 'chromosome_name','start_position', 'end_position'),
+                       filters = 'hgnc_symbol', 
+                       values = ensembl.ids, 
+                       mart = ensembl)
+
+darkturquoise = gene_color %>% filter(color == "darkturquoise") %>% pull(gene_name)
+
+darkturquoise_gene_position = ensembl.genes %>% filter(.$hgnc_symbol %in% darkturquoise) 
+#all of them in x and y chromosomes only 21 genes shown not all 28 
+ 
+
+#can produce a violin plot of expression by sex for the genes within dark turqouise 
+violin_plot_turq = combat.adj[, darkturquoise]
+violin_plot_turq = data.frame(violin_plot_turq)
+violin_plot_turq <- rownames_to_column(violin_plot_turq, "participant_id")
+col_to_merge = pheno_139[,c("participant_id","childs_sex")]
+
+violin_plot_turq = merge(violin_plot_turq,col_to_merge, by = "participant_id")
+
+plots <- list()
+
+# Iterate over the darkturquoise list and create violin plots
+for (variable in darkturquoise) {
+  plot <- ggplot(data = violin_plot_turq, aes(x = childs_sex, y = !!rlang::sym(variable))) +
+    geom_violin() +
+    labs(x = NULL, y = variable)  # Set the y-axis label as the variable name
+  
+  plots[[length(plots) + 1]] <- plot  # Append the plot to the list
+}
+
+plot_grid(plots[[1]], plots[[2]], plots[[3]], plots[[4]], plots[[5]], plots[[6]], plots[[7]], plots[[8]], plots[[9]], plots[[10]], plots[[11]], plots[[12]], plots[[13]], plots[[14]])
+
+
+plot_grid(plots[[15]], plots[[16]], plots[[17]], plots[[18]], plots[[19]], plots[[20]], plots[[21]], plots[[22]], plots[[23]], plots[[24]], plots[[25]], plots[[26]], plots[[27]], plots[[28]])
+
+```
+#PFAS and PPAR expression 
+```{r}
+PPAR_pfas = data.frame()
+for( x in PFASp){
+  for ( i in c("PPARA", "PPARD","PPARG")){
+    model <- lm(combat.adj[, i] ~ log_pfas[, x] + pheno_139$mom_age_at_birth + pheno_139$mom_education + pheno_139$gest_age_in_weeks_edd + pheno_139$MomBMI_36wks + pheno_139$childs_ethnicity + pheno_139$childs_sex + pc_data)
+    lm_summary <- summary(model)
+    p_value <- lm_summary$coefficients[2,4]
+    estimate <- coef(model)[2]
+    df <- data.frame(p.value = p_value, estimate = estimate, PPAR = i, PFAS = x)
+     PPAR_pfas <- rbind(PPAR_pfas, df)
+  }
+}
+
+PPAR_pfas = PPAR_pfas %>% filter(p.value <= 0.05)
+
+PPAR_pfas
+```
+#dark turquoise~PFAS linear regression model with sex interaction 
+```{r}
+ dark_red = data.frame()
+for (x in PFASp){
+  model2 <- summary(lm(eigengenes$MEdarkred ~ log_pfas[,x] + pheno_139$childs_sex + pheno_139$mom_age_at_birth + pheno_139$mom_education + pheno_139$gest_age_in_weeks_edd + pheno_139$MomBMI_36wks + pheno_139$childs_ethnicity + pheno_139$childs_sex + pc_data + log_pfas[,x]:pheno_139$childs_sex))
+  
+  model1 <- summary(lm(eigengenes$MEdarkred ~ log_pfas[,x] + pheno_139$childs_sex))
+  
+  #summary for one model at a time pull the coefficients at a time 
+  df = data.frame(p_value_no_inter = model1$coefficients[2,4], p_value_inter = model2$coefficients[11,4], r2_no_inter = model1$r.squared, r2_inter = model2$r.squared, no_inter_estimate = model1$coefficients[1,3], inter_estimate = model2$coefficients[1,3], PFAS =x)
+  
+  dark_red  = rbind(dark_red, df)
+}
+dark_red %>% filter(p_value_inter <= 0.05)
+```
+
+#pink KEGG and GO Terms 
+```{r}
+library(gprofiler2)
+pink = gene_color %>% filter(color == "darkred") %>% pull(gene_name)
+#pink_KEGG = gost(pink, organism = "hsapiens", sources = "KEGG")$result
+
+#ggplot(data = pink_KEGG, aes(x = -log10(p_value), y = term_name )) + geom_point(aes(size = intersection_size, color = factor(source))) + ylab("") + xlab(expression("-log"[10]*"(p-value)")) + labs(size="Hits") + ggtitle("Dark Red KEGG Terms") + theme(plot.title = element_text(face = "bold", size = 20, hjust = 0.5), axis.text.x= element_text(size = 10), axis.text.y= element_text(size = 10))+ scale_colour_brewer(palette = "Set2")
+
+pink_GO = gost(pink, organism = "hsapiens", sources = "GO")$result
+
+ggplot(data = pink_GO, aes(x = -log10(p_value), y = term_name )) + geom_point(aes(size =intersection_size , color = factor(source))) + ylab("") + xlab(expression("-log"[10]*"(p-value)")) + labs(size="Hits", color="GO source") + ggtitle("Dark Red") + theme(plot.title = element_text(face = "bold", size = 20, hjust = 0.5), axis.text.x= element_text(size = 10), axis.text.y= element_text(size = 5))+ scale_colour_brewer(palette = "Set2")
+```
+#green yellow KEGG and GO 
+```{r}
+greenyellow = gene_color %>% filter(color == "darkred") %>% pull(gene_name)
+greenyellow_KEGG = gost(greenyellow, organism = "hsapiens", sources = "KEGG")$result
+
+ggplot(data = greenyellow_KEGG, aes(x = -log10(p_value), y = term_name )) + geom_point(aes(size = intersection_size, color = factor(source))) + ylab("") + xlab(expression("-log"[10]*"(p-value)")) + labs(size="Hits") + ggtitle("Dark Red KEGG Terms") + theme(plot.title = element_text(face = "bold", size = 20, hjust = 0.5), axis.text.x= element_text(size = 10), axis.text.y= element_text(size = 10))+ scale_colour_brewer(palette = "Set2")
+
+greenyellow_GO = gost(greenyellow, organism = "hsapiens", sources = "GO")$result
+
+ggplot(data = greenyellow_GO, aes(x = -log10(p_value), y = term_name )) + geom_point(aes(size = intersection_size, color = factor(source))) + ylab("") + xlab(expression("-log"[10]*"(p-value)")) + labs(size="Hits", color="GO source") + ggtitle("Dark Red GO Terms") + theme(plot.title = element_text(face = "bold", size = 20, hjust = 0.5), axis.text.x= element_text(size = 10), axis.text.y= element_text(size = 10))+ scale_colour_brewer(palette = "Set2")
+```
+#hypeR gene enrichment of the molecular signatures collection of  “hallmark” genes
+```{r}
+#devtools::install_github("montilab/hypeR")
+library(hypeR)
+colors <- unique(gene_color$color)
+
+# Initialize an empty list to store the result
+signatures <- list()
+
+# Iterate over each color
+for (color in colors) {
+  # Filter genes for the current color
+  genes <- gene_color$gene_name[gene_color$color == color]
+  
+  # Add color and corresponding genes to the result list
+  signatures[[color]] <- genes
+}
+
+signatures = signatures[names(signatures) != "grey"] 
+
+genesets <- msigdb_gsets("Homo sapiens", "H", "", clean=TRUE)
+
+mhyp <- hypeR(signatures, genesets, test="hypergeometric", background=30000)
+
+hyp_dots(mhyp, merge=TRUE, fdr=0.05, title="Co-expression Modules")
+```
+
+#XY module/dark red  stratified by sex 
+```{r}
+f_pheno = pheno_139[which(pheno_139$childs_sex == "Female"),]
+
+m_pheno = pheno_139[which(pheno_139$childs_sex == "Male"),]
+
+pfas_f = log_pfas[which(pheno_139$childs_sex == "Female"),]
+  
+pfas_m = log_pfas[which(pheno_139$childs_sex == "Male"),]
+
+eigengene_m = eigengenes[which(pheno_139$childs_sex == "Male"),]
+eigengene_f = eigengenes[which(pheno_139$childs_sex == "Female"),]
+
+
+eigengene_PFAS_m<- data.frame()
+
+
+  for (x in colnames(log_pfas)){
+    model <- lm(eigengene_m[, "MEdarkred"] ~ log_pfas[rownames(m_pheno), x] + m_pheno$mom_age_at_birth + m_pheno$mom_education + m_pheno$gest_age_in_weeks_edd + m_pheno$MomBMI_36wks +  pc_data[which(pheno_139$childs_sex == "Male")])
+    lm_summary <- summary(model)
+    p_value <- lm_summary$coefficients[2,4]
+    estimate <- coef(model)[2]
+    df <- data.frame(p.value = p_value, estimate = estimate, module = "Dark Red", PFAS = x)
+    eigengene_PFAS_m <- rbind(eigengene_PFAS_m, df)
+  }
+
+
+ eigengene_PFAS_m 
+
+ eigengene_PFAS_m
+ 
+ 
+ eigengene_PFAS_f<- data.frame()
+
+
+  for (x in colnames(log_pfas)){
+    model <- lm(eigengene_f[, "MEdarkred"] ~ log_pfas[rownames(f_pheno), x] + f_pheno$mom_age_at_birth + f_pheno$mom_education + f_pheno$gest_age_in_weeks_edd + f_pheno$MomBMI_36wks +  pc_data[which(pheno_139$childs_sex == "Female")])
+    lm_summary <- summary(model)
+    p_value <- lm_summary$coefficients[2,4]
+    estimate <- coef(model)[2]
+    df <- data.frame(p.value = p_value, estimate = estimate, module = "Dark Red", PFAS = x)
+    eigengene_PFAS_f <- rbind(eigengene_PFAS_f, df)
+  }
+
+
+ 
+
+
+ eigengene_PFAS_f 
+
+ 
+ 
+ 
+```
+#quatiles into categorical variables
+```{r}
+
+# Compute quantiles
+quantiles <- quantile(log_pfas$PFDA, probs = seq(0, 1, by = 0.25))
+
+if (quantiles[1] == min(log_pfas$PFDA)) {
+  quantiles[1] <- quantiles[1] - 1e-10
+}
+
+# Create quantile column
+quantile_column <- cut(log_pfas$PFDA, breaks = quantiles, labels = FALSE, include.lowest = TRUE)
+
+quantile_column = as.character(quantile_column)
+eigengene_PFDA_quantile <- data.frame()
+
+for (i in 1:ncol(eigengenes)) {
+    model <- lm(eigengenes[, i] ~ quantile_column + pheno_139$mom_age_at_birth + pheno_139$mom_education + pheno_139$gest_age_in_weeks_edd + pheno_139$MomBMI_36wks +  pheno_139$childs_sex + pheno_139$MomBMI_10wks + pheno_139$official_enroll_category+  pc_data)
+    lm_summary <- summary(model)
+    df <- data.frame(  p_value_Q2 =lm_summary$coefficients[2,4], estimate_Q2 = lm_summary$coefficients[2,1], p_value_Q3 = lm_summary$coefficients[3,4], estimate_Q3 = lm_summary$coefficients[3,1],  p_value_Q4 = lm_summary$coefficients[4,4], estimate_Q4 = lm_summary$coefficients[4,1], module = colnames(eigengenes)[i], PFAS = "PFDA")
+   eigengene_PFDA_quantile <- rbind(eigengene_PFDA_quantile, df)
+  }
+
+
+eigengene_PFDA_quantile = eigengene_PFDA_quantile %>%
+  filter(p_value_Q2 <= 0.05 | p_value_Q3 <= 0.05 |p_value_Q4 <= 0.05 ) %>%
+  mutate(module = gsub("ME", "", module))
+ 
+ eigengene_PFDA_quantile
+ 
+ table(quantile_column)
+
+```
+
+```{r}
+ model <- lm(eigengenes[,"MEblack"] ~ quantile_column + pheno_139$mom_age_at_birth + pheno_139$mom_education + pheno_139$gest_age_in_weeks_edd + pheno_139$MomBMI_36wks +  pheno_139$childs_sex + pc_data)
+    lm_summary <- summary(model)
+    
+     lm_summary
+```
+
+```{r}
+ model <- lm(eigengenes[, i] ~ log_pfas[, x] + pheno_139$mom_age_at_birth + pheno_139$mom_education + pheno_139$gest_age_in_weeks_edd + pheno_139$MomBMI_36wks +  pheno_139$childs_sex + pc_data)
+
+
+```
+
+```{r}
+library(openxlsx)
+
+# Assuming you have multiple data frames named eigengene_PFAS, df_75, df_50, eigengene_PFDA_quantile, eigengene_PFAS_sex, ...
+# and you want to export them to different sheets in the same Excel file.
+
+# Define the file path for the Excel file
+excel_file <- "/Users/cynthiaperez/WGCNA_PFAS/Aug7.xlsx"
+
+# Create a new workbook
+wb <- createWorkbook()
+
+# Add each data frame to a separate sheet
+addWorksheet(wb, sheetName = "Sheet1")
+writeData(wb, sheet = "Sheet1", eigengene_PFAS)
+
+
+addWorksheet(wb, sheetName = "Quant_Cat")
+writeData(wb, sheet = "Quant_Cat", eigengene_PFDA_quantile)
+
+addWorksheet(wb, sheetName = "sex_PFAS")
+writeData(wb, sheet = "sex_PFAS", eigengene_PFAS_sex)
+
+# Save the workbook to the Excel file
+saveWorkbook(wb, excel_file)
+```
+
