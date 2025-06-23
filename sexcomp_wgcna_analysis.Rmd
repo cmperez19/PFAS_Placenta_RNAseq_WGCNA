@@ -1,0 +1,519 @@
+```{r}
+library(tidyverse)
+library(gprofiler2)
+library(dplyr)
+library(ggplot2)
+library(WGCNA)
+load("eigengenes_spearman_5_sexchr.Rdata")
+load("sex_comp_combat_adj_pheno.RData")
+load("log_PFAS_pheno.Rdata")
+load("annotation_file.RData")
+
+#("G-155","G-157") are not in the pfas data 
+#removing IDs not in pfas data by index 
+#which(colnames(sex_comp_combat.adj) %in% rownames(log_pfas) == FALSE)
+#30 31
+#also removing ID G-174 because it is not matching correctly with male sex it is index 37 in log_pfas and 39 in sex_comp_combat.adj 
+sex_comp_combat.adj = sex_comp_combat.adj[,-c(30,31,39)]
+#removing IDs not in combat.adj by index 
+#which(rownames(log_pfas) %in% colnames(sex_comp_combat.adj) == FALSE)
+#70 103 148
+log_pfas = log_pfas[-c(70,103, 148,37),]
+rownames(pheno_150) = pheno_150$participant_id
+pheno_150 = pheno_150[rownames(log_pfas),]
+
+combat.adj = t(sex_comp_combat.adj)
+#rownames(combat.adj) == rownames(log_pfas) TRUE ! 
+
+#PC
+pc <- prcomp(combat.adj)
+pc_data = pc$x
+pc_data = pc_data[,"PC1"]
+#pc_data = pc_data[pheno_150$participant_id[which(pheno_150$childs_sex == "Male")],"PC1"]
+
+PFASp = c("L-PFOA","PFHxS","PFNA","PFDA","s-PFOS")
+log_pfas = log_pfas[,PFASp]
+eigengenes = module_Eigengenes$eigengenes
+eigengenes = eigengenes[(rownames(eigengenes) %in% rownames(log_pfas)),]
+```
+
+```{r}
+load("~/Downloads/ViCTER_maternal_environment_2024-05-29.RData")
+rownames(wide_pfas_modeling) = wide_pfas_modeling$id
+weight = wide_pfas_modeling[pheno_150$participant_id, c("id", "gwg_kg")]
+#pheno$participant_id == weight$id TRUE 
+colnames(weight)[1] = "participant_id"
+weight = data.frame(weight)
+rownames(weight) = weight$participant_id
+weight = weight[rownames(log_pfas),]
+pheno_150= merge(pheno_150, weight, by = "participant_id")
+rm(list = ls()[!ls() %in% c("pheno_150", "eigengenes", "gene_color", "PFASp", "combat.adj", "log_pfas", "pc_data", "gene_info")])
+
+#pheno_150$gwg_kg
+```
+
+#multicolinarity 
+```{r}
+data<- pheno_150[, c("mom_age_at_birth", "mom_education","gwg_kg" , "childs_sex", "official_enroll_category", "gest_age_in_weeks_edd" )]
+data$childs_sex <- if_else(data$childs_sex == "Female", 0, 1)
+data$official_enroll_category <- if_else(data$official_enroll_category == "Overweight", 1, 0)
+data$mom_education <- as.numeric(substr(data$mom_education, 1, 1))
+#create correlation matrix
+data = cbind(data, pc_data)
+cor(data, use="complete.obs")
+```
+
+
+```{r}
+eigengene_PFAS <- data.frame()
+
+
+for (i in 1:ncol(eigengenes)) {
+  for (x in PFASp){
+    model <- lm(eigengenes[, i] ~ log_pfas[, x] + pheno_150$mom_age_at_birth + pheno_150$mom_education + pheno_150$gest_age_in_weeks_edd + pheno_150$gwg_kg +  pheno_150$childs_sex + pheno_150$official_enroll_category+ pc_data)
+    lm_summary <- summary(model)
+    p_value <- lm_summary$coefficients[2,4]
+    estimate <- coef(model)[2]
+    df <- data.frame(p.value = p_value, estimate = estimate, module = colnames(eigengenes)[i], PFAS = x)
+    eigengene_PFAS <- rbind(eigengene_PFAS, df)
+  }
+}
+
+
+eigengene_PFAS$FDR = p.adjust(eigengene_PFAS$p.value, method = "fdr", n =100)
+
+eigengene_PFAS %>%
+  filter(FDR <= 0.05) %>%
+  mutate(module = gsub("ME", "", module))
+ 
+```
+
+
+```{r}
+    model <- lm(eigengenes[, "MElightgreen"] ~ log_pfas[, 5] + pheno_150$mom_age_at_birth + pheno_150$mom_education + pheno_150$gest_age_in_weeks_edd + pheno_150$gwg_kg +  pheno_150$childs_sex + pheno_150$official_enroll_category+ pc_data)
+  
+    confint(model, level=0.95)
+```
+
+```{r}
+library(rstatix)
+colnames(log_pfas)[1] = "PFOA"
+colnames(log_pfas)[5] = "PFOS"
+log_pfas[,1:5] %>% 
+    cor_mat(method = "spearman") %>%
+    cor_reorder() %>%
+    pull_lower_triangle() %>%
+    cor_plot( method = "color",
+    label = TRUE,
+    insignificant = "blank")
+```
+
+
+```{r}
+eigengene_PFAS_sex <- data.frame()
+
+
+  for (x in PFASp){
+    model <- lm(eigengenes[,"MElightgreen"] ~ log_pfas[,x] + pheno_150$childs_sex + pheno_150$mom_age_at_birth + pheno_150$mom_education + pheno_150$gest_age_in_weeks_edd +  pheno_150$gwg_kg + pheno_150$official_enroll_category + pc_data + pheno_150$childs_sex:log_pfas[,x])
+    lm_summary <- summary(model)
+    p_value <- lm_summary$coefficients[11,4]
+    estimate <- lm_summary$coefficients[11,1]
+    df <- data.frame(cofit_lower = confint(model, level=0.95)[2,1], cofit_upper = confint(model, level=0.95)[2,2],estimate = estimate, module = "lightgreen", p.value = p_value,  PFAS = x)
+    eigengene_PFAS_sex <- rbind(eigengene_PFAS_sex, df)
+ }
+
+
+#eigengene_PFAS_sex$p.adjust = p.adjust(eigengene_PFAS_sex$p.value, method = "fdr", n =100)
+
+eigengene_PFAS_sex
+
+```
+
+
+
+
+```{r}
+f_pheno = pheno_150[which(pheno_150$childs_sex == "Female"),]
+rownames(f_pheno) = f_pheno$participant_id
+m_pheno = pheno_150[which(pheno_150$childs_sex == "Male"),]
+rownames(m_pheno) = m_pheno$participant_id
+pfas_f = log_pfas[which(pheno_150$childs_sex == "Female"),]
+  
+pfas_m = log_pfas[which(pheno_150$childs_sex == "Male"),]
+
+eigengene_m = eigengenes[which(pheno_150$childs_sex == "Male"),]
+eigengene_f = eigengenes[which(pheno_150$childs_sex == "Female"),]
+
+
+eigengene_PFAS_m<- data.frame()
+
+
+  for (x in colnames(log_pfas)){
+    model <- lm(eigengene_m[, "MElightgreen"] ~ log_pfas[rownames(m_pheno), x] + m_pheno$mom_age_at_birth + m_pheno$mom_education + m_pheno$gest_age_in_weeks_edd + m_pheno$gwg_kg +  m_pheno$official_enroll_category + pc_data[which(pheno_150$childs_sex == "Male")])
+   
+    lm_summary <- summary(model)
+    p_value <- lm_summary$coefficients[2,4]
+    estimate <- coef(model)[2]
+    df <- data.frame(p.value = p_value,cofit_lower = confint(model, level=0.95)[2,1], cofit_upper = confint(model, level=0.95)[2,2], estimate = estimate, module = "Light Green", PFAS = x)
+    eigengene_PFAS_m <- rbind(eigengene_PFAS_m, df)
+  }
+
+
+ eigengene_PFAS_m 
+
+
+ 
+ eigengene_PFAS_f<- data.frame()
+
+
+  for (x in colnames(log_pfas)){
+    model <- lm(eigengene_f[, "MElightgreen"] ~ log_pfas[rownames(f_pheno), x] + f_pheno$mom_age_at_birth + f_pheno$mom_education + f_pheno$gest_age_in_weeks_edd + f_pheno$gwg_kg + f_pheno$official_enroll_category +  pc_data[which(pheno_150$childs_sex == "Female")])
+    confint(model, level=0.95)
+    lm_summary <- summary(model)
+    p_value <- lm_summary$coefficients[2,4]
+    estimate <- coef(model)[2]
+    df <- data.frame(p.value = p_value, cofit_lower = confint(model, level=0.95)[2,1], cofit_upper = confint(model, level=0.95)[2,2], estimate = estimate, module = "Light Green", PFAS = x)
+    eigengene_PFAS_f <- rbind(eigengene_PFAS_f, df)
+  }
+
+
+
+ eigengene_PFAS_f 
+
+
+```
+
+
+```{r}
+birthlength = data.frame()
+for (x in PFASp){
+  for (i in 1:ncol(eigengenes)) {
+     model <- lm( pheno_150$birth_len_cm ~ log_pfas[, x] + eigengenes[,i]+ pheno_150$mom_age_at_birth + pheno_150$mom_education + pheno_150$gest_age_in_weeks_edd + pheno_150$official_enroll_category+ pheno_150$gwg_kg+ pheno_150$childs_sex + pc_data)
+    lm_summary <- summary(model)
+    p_value <- lm_summary$coefficients[2,4]
+    estimate <- coef(model)[2]
+    df <- data.frame(p.value = p_value, estimate = estimate, outcome = "Birth Length" , PFAS = x, module = colnames(eigengenes)[i])
+    birthlength <- rbind(birthlength, df)
+  }
+}
+
+birthlength %>% filter(p.value <= 0.05)
+
+birthweight = data.frame()
+for (x in PFASp){
+  for (i in 1:ncol(eigengenes)) {
+     model <- lm( pheno_150$birth_wt_kg ~ log_pfas[, x] + eigengenes[,i] + pheno_150$mom_age_at_birth + pheno_150$mom_education + pheno_150$gest_age_in_weeks_edd + pheno_150$official_enroll_category+ pheno_150$gwg_kg + pheno_150$childs_sex + pc_data)
+    lm_summary <- summary(model)
+    p_value <- lm_summary$coefficients[2,4]
+    estimate <- coef(model)[2]
+    df <- data.frame(p.value = p_value, estimate = estimate, outcome = "Birthweight" , PFAS = x, module =colnames(eigengenes)[i])
+    birthweight <- rbind(birthweight, df)
+  }}
+
+birthweight %>% filter(p.value <= 0.05)
+
+GA = data.frame()
+for (x in PFASp){
+  for (i in 1:ncol(eigengenes)) {
+     model <- lm(pheno_150$gest_age_in_weeks_edd ~ log_pfas[, x] + eigengenes[,i] + pheno_150$mom_age_at_birth + pheno_150$mom_education + pheno_150$official_enroll_category+ pheno_150$gwg_kg +  pheno_150$childs_sex + pc_data)
+    lm_summary <- summary(model)
+    p_value <- lm_summary$coefficients[2,4]
+    estimate <- coef(model)[2]
+    df <- data.frame(p.value = p_value, estimate = estimate, outcome = "GA" , PFAS = x, module =colnames(eigengenes)[i])
+    GA <- rbind(GA, df)
+}}
+
+GA %>% filter(p.value <= 0.05) %>% mutate(module = gsub("ME", "", module))
+```
+
+```{r}
+library(WGCNA)
+nGenes = ncol(combat.adj)
+nSamples = nrow(combat.adj)
+MEs0 = eigengenes
+MEs = orderMEs(MEs0)
+datTraits = pheno_150[,c("gest_age_in_weeks_edd",  "birth_wt_kg", "birth_len_cm")]
+moduleTraitCor = cor(MEs, datTraits, use = "p")
+moduleTraitPvalue = corPvalueStudent(moduleTraitCor, nSamples)
+
+
+# Assuming you have previously calculated moduleTraitCor and moduleTraitPvalue
+
+# Identify indices where p-values are not significant
+non_sig_indices <- moduleTraitPvalue > 0.05  # Adjust the significance level as needed
+
+# Update moduleTraitCor based on non-significant p-values
+moduleTraitCor[non_sig_indices] <- NA  # Replace non-significant values with NA
+
+# Generating text matrix with significant values and empty strings for non-significant ones
+textMatrix <- ifelse(non_sig_indices, "", paste(signif(moduleTraitCor, 2), "\n(", signif(moduleTraitPvalue, 1), ")", sep = ""))
+
+# Reshape textMatrix to match dimensions of moduleTraitCor
+dim(textMatrix) <- dim(moduleTraitCor)
+
+par(mar = c(8, 8, 3, 3))
+
+#Displaying the correlation values in a heatmap plot
+labeledHeatmap(Matrix = moduleTraitCor,
+               xLabels = c("Gestational Age", "Birth Weight (kg)", "Birth Length (cm)"),
+               yLabels = gsub("ME", "", names(MEs)),
+               ySymbols = names(MEs),
+               colorLabels = FALSE,
+               colors = blueWhiteRed(50),
+               textMatrix = textMatrix,
+               setStdMargins = FALSE,
+               cex.text = 0.7,
+               zlim = c(-1,1),
+               cex.lab.x = 1,
+               cex.lab.y = 1,
+               main = paste("Module-trait relationships"))
+```
+
+
+```{r}
+lightgreen = gene_color[which(gene_color$color == "lightgreen"),]$gene_name
+
+TRNModel %>% filter(.$targetGene %in% lightgreen) 
+
+  
+
+#gene_info %>% filter(.$gene_name %in% lightgreen) %>% count(seqnames, sort = TRUE)
+```
+
+```{r}
+
+library(pheatmap)
+color_palette <- colorRampPalette(c("green", "black", "red"))(100)
+sex_data <- factor(pheno_150$childs_sex)
+annotation_df <- data.frame(Sex = sex_data)
+rownames(annotation_df) <- pheno_150$participant_id
+sex_colors <- list(Sex= c(Male = "blue", Female = "pink"))
+gene_data <- t(combat.adj[pheno_150$participant_id,gene_color[which(gene_color$color == "lightgreen"),"gene_name"]])
+lightgreen = gene_color[which(gene_color$color == "lightgreen"),]$gene_name
+
+seqnames = gene_info %>% filter(.$gene_name %in% lightgreen) %>% select(seqnames, gene_name) %>% arrange(seqnames, .by_group = TRUE)
+
+colnames(seqnames) = c("chr", "gene_name")
+gene_data <- gene_data[seqnames$gene_name, ]
+
+unique_seqnames <- unique(seqnames$chr)
+seqname_colors <- colorRampPalette(c("purple", "orange", "cyan"))(length(unique_seqnames))
+names(seqname_colors) <- unique_seqnames
+
+# Create an annotation for row colors (gene names by seqname)
+row_annotation <- data.frame(chr = seqnames$chr)
+rownames(row_annotation) <- seqnames$gene_name
+
+# Assign the seqname colors for rows
+annotation_colors <- list(chr = seqname_colors)
+
+
+
+pheatmap(gene_data, 
+         annotation_col = annotation_df, 
+         annotation_colors = sex_colors,
+         annotation_row = row_annotation,
+         scale = "row", 
+         #color = color_palette, 
+         clustering_method = "complete",
+         clustering_distance_rows = "euclidean",
+         clustering_distance_cols = "euclidean",
+         show_rownames = TRUE,
+         show_colnames = F,
+         cluster_rows = F)
+```
+
+
+```{r}
+library(reshape2)
+PCobj = prcomp(combat.adj, retx = T, center = T, scale. = T)
+PCobj = data.frame(PCobj$x)[,1:5]
+PCobj$participant_id = rownames(PCobj)
+pheno_150 = merge(pheno_150, PCobj, by = "participant_id")
+
+data = pheno_150[,c("PC1", "PC2", "PC3","PC4", "PC5")]
+data = cbind(data, eigengenes)
+cor_pfas = cor(data)
+
+cor_melt <- melt(cor_pfas)
+
+ggplot(cor_melt, aes(x = Var1, y = Var2, fill = value)) +
+  scale_fill_gradient2(low = "blue", mid = "white", high = "red", midpoint = 0) +
+  geom_tile() +
+  theme(axis.text.x = element_text(angle = 45, vjust = 1, hjust = 1))
+```
+
+
+```{r}
+library(reshape2)
+
+
+colors <- c("2" = "red", "6" = "blue", "8" = "green", "12" = "purple", 
+            "13" = "orange", "20" = "pink", "X" = "yellow3", "Y" = "cyan")
+
+positions = gene_info %>% filter(.$gene_name %in% lightgreen) %>% select(seqnames, gene_name)
+lightgreen = positions[order(positions$seqnames),2]
+cor_pfas = cor(combat.adj[,lightgreen])
+
+cor_melt <- melt(cor_pfas)
+
+
+
+ggplot(cor_melt, aes(x = Var1, y = Var2, fill = value)) +
+  geom_tile() +
+  scale_fill_gradient2(low = "blue", mid = "white", high = "red", midpoint = 0) +
+  theme_minimal() +
+  labs(x = "", y = "") +
+  #scale_fill_distiller(palette = "Spectral") +
+  theme(axis.text.x = element_text(angle = 45, vjust = 1, hjust = 1, size = 12),  # Adjust x-axis text size
+        axis.text.y = element_text(size = 12), legend.text = element_text(size = 10), axis.text = element_text(color = colors[as.character(positions[order(positions$seqnames),1])])) 
+```
+
+
+
+
+```{r}
+library(gprofiler2)
+library(dplyr)
+library(openxlsx)
+
+# Create a new workbook
+wb <- createWorkbook()
+
+for(i in unique(gene_color$color)){
+  if(i != "grey"){
+    pink = gene_color %>% filter(color == i) %>% pull(gene_name)
+    pink_GO = gost(pink, organism = "hsapiens", sources = "GO")$result
+      df <- pink_GO %>% select(term_id,term_name, p_value)
+      addWorksheet(wb, i)  # Add a new worksheet with the color's name
+      writeData(wb, i, df) # Write data to the worksheet
+    }
+  }
+
+
+# Save the workbook to an Excel file
+saveWorkbook(wb, "GO_Terms_By_Color.xlsx")
+
+```
+
+```{r}
+wb <- createWorkbook()
+
+for(i in unique(gene_color$color)){
+  if(i != "grey"){
+   color = gene_color %>% filter(color == i) %>% pull(gene_name)
+   df = data.frame(color)
+      addWorksheet(wb, i)  # Add a new worksheet with the color's name
+      writeData(wb, i, df) # Write data to the worksheet
+    }
+  }
+
+
+# Save the workbook to an Excel file
+saveWorkbook(wb, "WGCNA_Color_List.xlsx")
+```
+
+```{r}
+TF_enrichment = data.frame()
+load("DataFile_FinalTRN.RData")
+
+#unique(eigengene_PFAS$module)
+for (i in unique(gene_color$color)){
+  if (i != "grey") {
+  color = gene_color %>% filter(color == i) %>% pull(gene_name)
+  TFN = TRNModel %>% filter(.$targetGene %in% color) 
+  sorted_df = sort(table(TFN$TF), decreasing = TRUE)
+  sorted_df = as.data.frame(sorted_df)
+  colnames(sorted_df) = c("Variable", "Count")
+  
+  in_module = sorted_df[1, "Variable"] %in% color
+  
+  ppars = sorted_df %>% filter(grepl("PPAR", Variable)) 
+  if(nrow(ppars) == 0){
+     df= data.frame(top_TF = sorted_df[1, "Variable"], PPARA = 0, PPARD = 0, PPARG = 0, top_TF_module= in_module,  top_TF_num = sorted_df[1, "Count"], module = i)
+  } else {
+    rownames(ppars) = ppars$Variable
+    df= data.frame(top_TF = sorted_df[1, "Variable"], PPARA = ppars["PPARA","Count"], PPARD = ppars["PPARD","Count"], PPARG =ppars["PPARG","Count"], top_TF_module= in_module, top_TF_num = sorted_df[1, "Count"], module = i)
+  }
+  
+TF_enrichment  = rbind(TF_enrichment, df)
+} }
+
+
+TF_enrichment[is.na(TF_enrichment)] <- 0
+
+TF_enrichment
+```
+
+```{r}
+chooseTopHubInEachModule(datExpr = combat.adj, colorh = gene_color$color, power = 5, type = "signed")
+```
+
+```{r}
+modules_table = data.frame(table(gene_color$color))
+modules_table = modules_table[c(7, 1:6, 8:21),]
+modules_table = modules_table %>% slice(2:nrow(modules_table)) %>% arrange(desc(Freq)) %>% rbind(slice(modules_table,1), .)
+
+modules_table$GO_term = c(" ", "protein modification process", "DNA templeted transcription", "regulation of cellular process", "intracellular transport", "intracellular signal transduction", "developmental process", "cell cycle process", "macromolecule localization", "response to peptide hormone", "transferrin transport", "endomembrane system", "cell population proliferation", "cytoplasmic translation", "regulation of multicellular organismal process", "response to hypoxia", "immune response regulation", "cell activation", "regulation of insulin growth factor receptor singaling pathway", "phagocytosis", "blood coagulation")
+
+ggplot(modules_table, aes(Freq, Var1)) + scale_y_discrete(limits = rev(modules_table$Var1)) + geom_bar(stat = "identity", fill = modules_table$Var1) +
+  geom_text(aes(label= GO_term),size = 6, hjust = -0.01)  + xlim(c(0,10500)) + theme_minimal(base_size = 20) + xlab("Number of Genes") + ylab("Module")
+```
+
+```{r}
+eigengene_BMI <- data.frame()
+
+
+for (i in 1:ncol(eigengenes)) {
+    model <- lm(eigengenes[, i] ~ pheno_150$official_enroll_category + pheno_150$childs_sex + pheno_150$mom_age_at_birth + pheno_150$mom_education + pheno_150$gwg_kg + pheno_150$gest_age_in_weeks_edd  + pheno_150$Prob_Caucasian + pheno_150$delivery_method+ pheno_150$Trophoblasts + pheno_150$Endothelial + pheno_150$Stromal + pheno_150$Hofbauer + pheno_150$nRBC + pheno_150$Batch_Plate)
+    lm_summary <- summary(model)
+    p_value <- lm_summary$coefficients[2,4]
+    estimate <- coef(model)[2]
+    df <- data.frame(p.value = p_value, estimate = estimate, module = colnames(eigengenes)[i])
+    eigengene_BMI <- rbind(eigengene_BMI, df)
+  }
+
+
+eigengene_BMI = eigengene_BMI %>%  mutate(q.value = p.adjust(p.value, method = "fdr", n = n()))
+eigengene_BMI %>%
+  filter(q.value <= 0.05) %>%
+  mutate(module = gsub("ME", "", module))
+```
+```{r}
+
+eigengene_BMI <- data.frame()
+
+
+for (i in 1:ncol(eigengenes)) {
+    model <- lm(eigengenes[, i] ~ pheno_150$official_enroll_category +  pheno_150$childs_sex + pheno_150$mom_age_at_birth + pheno_150$mom_education + pheno_150$gest_age_in_weeks_edd +  pheno_150$gwg_kg  + pc_data)
+    lm_summary <- summary(model)
+    p_value <- lm_summary$coefficients[2,4]
+    estimate <- coef(model)[2]
+    df <- data.frame(p.value = p_value, estimate = estimate, module = colnames(eigengenes)[i])
+    eigengene_BMI <- rbind(eigengene_BMI, df)
+  }
+
+
+eigengene_BMI = eigengene_BMI %>%  mutate(q.value = p.adjust(p.value, method = "fdr", n = n()))
+eigengene_BMI %>%
+  filter(q.value <= 0.05) %>%
+  mutate(module = gsub("ME", "", module))
+
+```
+
+```{r}
+bmi_module_names = eigengene_BMI %>% filter(p.value < 0.05) %>% pull(module)
+bmi_mrna = list()
+for( ME in bmi_module_names){ 
+  ME = gsub('ME', '', ME)
+  bmi_mrna[[ME]] = gene_color %>% filter(color == ME) %>%  mutate(V1 = str_replace_all(gene_name, "[.]", "-")) %>% pull(V1)
+}
+
+library(openxlsx)
+openxlsx::write.xlsx(bmi_mrna, file = ' BMI_mRNA_wgcna.xlsx')
+```
+
+```{r}
+
+```
+
