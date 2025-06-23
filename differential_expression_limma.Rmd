@@ -1,0 +1,248 @@
+```{r}
+library(tidyverse)
+library(gprofiler2)
+library(dplyr)
+library(ggplot2)
+library(WGCNA)
+library(limma)
+load("eigengenes_spearman_5_sexchr.Rdata")
+load("sex_comp_combat_adj_pheno.RData")
+load("log_PFAS_pheno.Rdata")
+load("annotation_file.RData")
+
+#("G-155","G-157") are not in the pfas data 
+#removing IDs not in pfas data by index 
+#which(colnames(sex_comp_combat.adj) %in% rownames(log_pfas) == FALSE)
+#30 31
+#also removing ID G-174 because it is not matching correctly with male sex it is index 37 in log_pfas and 39 in sex_comp_combat.adj 
+sex_comp_combat.adj = sex_comp_combat.adj[,-c(30,31,39)]
+#removing IDs not in combat.adj by index 
+#which(rownames(log_pfas) %in% colnames(sex_comp_combat.adj) == FALSE)
+#70 103 148
+log_pfas = log_pfas[-c(70,103, 148,37),]
+rownames(pheno_150) = pheno_150$participant_id
+pheno_150 = pheno_150[rownames(log_pfas),]
+
+combat.adj = t(sex_comp_combat.adj)
+#rownames(combat.adj) == rownames(log_pfas) TRUE ! 
+load("~/Downloads/ViCTER_maternal_environment_2024-05-29.RData")
+rownames(wide_pfas_modeling) = wide_pfas_modeling$id
+weight = wide_pfas_modeling[pheno$participant_id, c("id", "gwg_kg")]
+#pheno$participant_id == weight$id TRUE 
+colnames(weight)[1] = "participant_id"
+weight = data.frame(weight)
+rownames(weight) = weight$participant_id
+weight = weight[rownames(log_pfas),]
+pheno_150= merge(pheno_150, weight, by = "participant_id")
+rm(list = ls()[!ls() %in% c("pheno_150", "eigengenes", "gene_color", "PFASp", "combat.adj", "log_pfas", "pc_data", "gene_info")])
+
+#PC
+pc <- prcomp(combat.adj)
+pc_data = pc$x
+pheno_150$pc_data = pc_data[,"PC1"]
+#pc_data = pc_data[pheno_150$participant_id[which(pheno_150$childs_sex == "Male")],"PC1"]
+pc <- prcomp(combat.adj)
+pc_data = pc$x
+pheno_150$pc_data = pc_data[,"PC1"]
+#pc_data = pc_data[pheno_150$participant_id[which(pheno_150$childs_sex == "Male")],"PC1"]
+PFASp = c("L-PFOA","PFHxS","PFNA","PFDA","s-PFOS")
+log_pfas = log_pfas[,PFASp]
+log_pfas$participant_id = rownames(log_pfas)
+pheno_150 = merge(pheno_150, log_pfas, by = "participant_id")
+colnames(pheno_150)[53] = "PFOA"
+colnames(pheno_150)[57] = "PFOS"
+
+
+Y_genes = gene_info %>% filter(.$seqnames == "Y") %>% pull(gene_name)
+X_genes =  gene_info %>% filter(.$seqnames == "X") %>% pull(gene_name)
+#remove X and Y genes
+#combat.adj = combat.adj[,colnames(combat.adj) %in% c(Y_genes, X_genes)]
+combat.adj_X = combat.adj[which(pheno_150$childs_sex == "Female"), (colnames(combat.adj) %in% X_genes)]
+
+combat.adj_XY = combat.adj[,colnames(combat.adj) %in% c(Y_genes, X_genes)]
+
+PFASp = c("L-PFOA","PFHxS","PFNA","PFDA","s-PFOS")
+log_pfas = log_pfas[,PFASp]
+DEG = data.frame()
+
+pheno_150[74,"gwg_kg"] = mean(pheno_150$gwg_kg, na.rm = T)
+pheno_150[74, "MomBMI_36wks"] = mean(pheno_150$MomBMI_36wks, na.rm = T)
+```
+
+```{r}
+design_pfas <- model.matrix(~PFOA + mom_age_at_birth + mom_education + gest_age_in_weeks_edd + gwg_kg +  childs_sex + official_enroll_category+ pc_data, pheno_150)
+#Linear Fit and FDR#
+lmres <- lmFit(t(combat.adj),design_pfas)
+#Boostrap standard error function
+lmboot <- eBayes(lmres)
+##Issue with maintaining labels in reduced subsets
+topTable(lmboot, coef=2, confint=TRUE, number=20)
+
+design_pfas <- model.matrix(~PFHxS+ mom_age_at_birth + mom_education + gest_age_in_weeks_edd + gwg_kg +  childs_sex + official_enroll_category+ pc_data, pheno_150)
+#Linear Fit and FDR#
+lmres <- lmFit(t(combat.adj),design_pfas)
+#Boostrap standard error function
+lmboot <- eBayes(lmres)
+##Issue with maintaining labels in reduced subsets
+topTable(lmboot, coef=2, confint=TRUE, number=20)
+
+design_pfas <- model.matrix(~PFNA + mom_age_at_birth + mom_education + gest_age_in_weeks_edd + gwg_kg +  childs_sex + official_enroll_category+ pc_data, pheno_150)
+#Linear Fit and FDR#
+lmres <- lmFit(t(combat.adj),design_pfas)
+#Boostrap standard error function
+lmboot <- eBayes(lmres)
+##Issue with maintaining labels in reduced subsets
+topTable(lmboot, coef=2, confint=TRUE, number=20)
+
+design_pfas <- model.matrix(~PFDA + mom_age_at_birth + mom_education + gest_age_in_weeks_edd + gwg_kg +  childs_sex + official_enroll_category+ pc_data, pheno_150)
+#Linear Fit and FDR#
+lmres <- lmFit(t(combat.adj),design_pfas)
+#Boostrap standard error function
+lmboot <- eBayes(lmres)
+##Issue with maintaining labels in reduced subsets
+topTable(lmboot, coef=2, confint=TRUE, number=20)
+
+design_pfas <- model.matrix(~PFOS + mom_age_at_birth + mom_education + gest_age_in_weeks_edd + gwg_kg +  childs_sex + official_enroll_category+ pc_data, pheno_150)
+#Linear Fit and FDR#
+lmres <- lmFit(t(combat.adj),design_pfas)
+#Boostrap standard error function
+lmboot <- eBayes(lmres)
+##Issue with maintaining labels in reduced subsets
+topTable(lmboot, coef=2, confint=TRUE, number=20)
+```
+
+```{r}
+design_pfas <- model.matrix(~PFOA+ mom_age_at_birth + mom_education + gest_age_in_weeks_edd + gwg_kg +  official_enroll_category+ pc_data, pheno_150[which(pheno_150$childs_sex == "Female"),])
+#Linear Fit and FDR#
+lmres <- lmFit(t(combat.adj_X),design_pfas)
+#Boostrap standard error function
+lmboot <- eBayes(lmres)
+##Issue with maintaining labels in reduced subsets
+topTable(lmboot, coef=2) %>% filter(adj.P.Val < 0.05)
+
+
+design_pfas <- model.matrix(~PFHxS+ mom_age_at_birth + mom_education + gest_age_in_weeks_edd + gwg_kg +  official_enroll_category+ pc_data, pheno_150[which(pheno_150$childs_sex == "Female"),])
+#Linear Fit and FDR#
+lmres <- lmFit(t(combat.adj_X),design_pfas)
+#Boostrap standard error function
+lmboot <- eBayes(lmres)
+##Issue with maintaining labels in reduced subsets
+topTable(lmboot, coef=2) %>% filter(adj.P.Val < 0.05)
+
+design_pfas <- model.matrix(~PFNA+ mom_age_at_birth + mom_education + gest_age_in_weeks_edd + gwg_kg +  official_enroll_category+ pc_data, pheno_150[which(pheno_150$childs_sex == "Female"),])
+#Linear Fit and FDR#
+lmres <- lmFit(t(combat.adj_X),design_pfas)
+#Boostrap standard error function
+lmboot <- eBayes(lmres)
+##Issue with maintaining labels in reduced subsets
+topTable(lmboot, coef=2) %>% filter(adj.P.Val < 0.05)
+
+design_pfas <- model.matrix(~PFDA+ mom_age_at_birth + mom_education + gest_age_in_weeks_edd + gwg_kg +  official_enroll_category+ pc_data, pheno_150[which(pheno_150$childs_sex == "Female"),])
+#Linear Fit and FDR#
+lmres <- lmFit(t(combat.adj_X),design_pfas)
+#Boostrap standard error function
+lmboot <- eBayes(lmres)
+##Issue with maintaining labels in reduced subsets
+topTable(lmboot, coef=2) %>% filter(adj.P.Val < 0.05)
+
+design_pfas <- model.matrix(~PFOS+ mom_age_at_birth + mom_education + gest_age_in_weeks_edd + gwg_kg +  official_enroll_category+ pc_data, pheno_150[which(pheno_150$childs_sex == "Female"),])
+#Linear Fit and FDR#
+lmres <- lmFit(t(combat.adj_X),design_pfas)
+#Boostrap standard error function
+lmboot <- eBayes(lmres)
+##Issue with maintaining labels in reduced subsets
+topTable(lmboot, coef=2) %>% filter(adj.P.Val < 0.05)
+```
+
+
+
+```{r}
+design_pfas <- model.matrix(~PFOA+ mom_age_at_birth + mom_education + gest_age_in_weeks_edd + gwg_kg +  official_enroll_category+ pc_data, pheno_150[which(pheno_150$childs_sex == "Male"),])
+#Linear Fit and FDR#
+lmres <- lmFit(t(combat.adj_XY[which(pheno_150$childs_sex == "Male"),]),design_pfas)
+#Boostrap standard error function
+lmboot <- eBayes(lmres)
+##Issue with maintaining labels in reduced subsets
+topTable(lmboot, coef=2) %>% filter(adj.P.Val < 0.05)
+
+
+design_pfas <- model.matrix(~PFHxS+ mom_age_at_birth + mom_education + gest_age_in_weeks_edd + gwg_kg +  official_enroll_category+ pc_data, pheno_150[which(pheno_150$childs_sex == "Male"),])
+#Linear Fit and FDR#
+lmres <- lmFit(t(combat.adj_XY[which(pheno_150$childs_sex == "Male"),]),design_pfas)
+#Boostrap standard error function
+lmboot <- eBayes(lmres)
+##Issue with maintaining labels in reduced subsets
+topTable(lmboot, coef=2) %>% filter(adj.P.Val < 0.05)
+
+
+design_pfas <- model.matrix(~PFNA+ mom_age_at_birth + mom_education + gest_age_in_weeks_edd + gwg_kg +  official_enroll_category+ pc_data, pheno_150[which(pheno_150$childs_sex == "Male"),])
+#Linear Fit and FDR#
+lmres <- lmFit(t(combat.adj_XY[which(pheno_150$childs_sex == "Male"),]),design_pfas)
+#Boostrap standard error function
+lmboot <- eBayes(lmres)
+##Issue with maintaining labels in reduced subsets
+topTable(lmboot, coef=2) %>% filter(adj.P.Val < 0.05)
+
+design_pfas <- model.matrix(~PFDA+ mom_age_at_birth + mom_education + gest_age_in_weeks_edd + gwg_kg +  official_enroll_category+ pc_data, pheno_150[which(pheno_150$childs_sex == "Male"),])
+#Linear Fit and FDR#
+lmres <- lmFit(t(combat.adj_XY[which(pheno_150$childs_sex == "Male"),]),design_pfas)
+#Boostrap standard error function
+lmboot <- eBayes(lmres)
+##Issue with maintaining labels in reduced subsets
+topTable(lmboot, coef=2) %>% filter(adj.P.Val < 0.05)
+
+design_pfas <- model.matrix(~PFOS+ mom_age_at_birth + mom_education + gest_age_in_weeks_edd + gwg_kg +  official_enroll_category+ pc_data, pheno_150[which(pheno_150$childs_sex == "Male"),])
+#Linear Fit and FDR#
+lmres <- lmFit(t(combat.adj_XY[which(pheno_150$childs_sex == "Male"),]),design_pfas)
+#Boostrap standard error function
+lmboot <- eBayes(lmres)
+##Issue with maintaining labels in reduced subsets
+topTable(lmboot, coef=2) %>% filter(adj.P.Val < 0.05)
+```
+
+```{r}
+design_pfas <- model.matrix(~PFNA+ mom_age_at_birth + mom_education + gest_age_in_weeks_edd + gwg_kg +  official_enroll_category+ pc_data, pheno_150[which(pheno_150$childs_sex == "Female"),])
+#Linear Fit and FDR#
+lmres <- lmFit(t(combat.adj_X),design_pfas)
+#Boostrap standard error function
+lmboot <- eBayes(lmres)
+##Issue with maintaining labels in reduced subsets
+PFNA = topTable(lmboot, coef=2, number = 15012 )
+PFNA$gene_name = rownames(PFNA)
+plot1 <- ggplot(data = PFNA, aes(x = logFC , y= -log10(P.Value))) +
+  geom_point(data = subset(PFNA, adj.P.Val <= 0.05), aes(color = "Associated with PFNA"), size = 2) +
+  geom_point(data = subset(PFNA, adj.P.Val > 0.05), aes(color = "Not Significant"), size = 2) +
+  scale_color_manual(values = c("Associated with PFNA" = "purple", "Not Significant" = "grey")) +
+  labs(
+       x = "Coefficient Estimate",
+       y = "-log10(p-value)",
+       color = "q-value < 0.05") + geom_label_repel(data = subset(PFNA, adj.P.Val<= 0.05), aes(label = gene_name),
+                            box.padding   = 0.5, 
+                            segment.color = 'grey50') +  scale_x_continuous(limits = c(-1, 1), breaks= seq(-1, 1, 0.25)) + theme(legend.position="bottom")
+```
+
+```{r}
+design_pfas <- model.matrix(~PFOS+ mom_age_at_birth + mom_education + gest_age_in_weeks_edd + gwg_kg +  official_enroll_category+ pc_data, pheno_150[which(pheno_150$childs_sex == "Female"),])
+#Linear Fit and FDR#
+lmres <- lmFit(t(combat.adj_X),design_pfas)
+#Boostrap standard error function
+lmboot <- eBayes(lmres)
+##Issue with maintaining labels in reduced subsets
+PFOS = topTable(lmboot, coef=2, number = 15012 )
+PFOS$gene_name = rownames(PFOS)
+plot2 <- ggplot(data = PFOS, aes(x = logFC , y= -log10(P.Value))) +
+  geom_point(data = subset(PFOS, adj.P.Val <= 0.05), aes(color = "Associated with PFOS"), size = 2) +
+  geom_point(data = subset(PFOS, adj.P.Val > 0.05), aes(color = "Not Significant"), size = 2) +
+  scale_color_manual(values = c("Associated with PFOS" = "blue", "Not Significant" = "grey")) +
+  labs(
+       x = "Coefficient Estimate",
+       y = "-log10(p-value)",
+       color = "q-value < 0.05") + geom_label_repel(data = subset(PFOS, adj.P.Val<= 0.05), aes(label = gene_name),
+                            box.padding   = 0.5, 
+                            segment.color = 'grey50') +  scale_x_continuous(limits = c(-1, 1), breaks= seq(-1, 1, 0.25)) + theme(legend.position="bottom")
+```
+
+```{r}
+library(gridExtra)
+grid.arrange(plot1, plot2, ncol=2)
+```
