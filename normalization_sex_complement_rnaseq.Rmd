@@ -1,0 +1,132 @@
+---
+title: "normalization_sex_complement_rnaseq"
+author: "Cynthia Perez"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+library(tidyverse)
+library(TRAPR)
+library(sva)
+library(gridExtra)
+library(patchwork)
+library(cowplot)
+```
+
+# Introduction
+
+This R Markdown report documents RNA-seq data preprocessing, normalization, batch correction, and sex-specific expression analysis using a sex-complement reference genome.
+
+# Load Data
+
+```{r load-data}
+load("sexcomplement_raw_counts_pheno150.RData")
+metaDataGlowing <- read.csv("~/WGCNA_PFAS/metaDataGlowing-for-TME.csv")
+colnames(metaDataGlowing)[4] = "participant_id"
+```
+
+# Prepare Count Matrix for TRAPR
+
+```{r format-counts}
+sex_complement_raw_counts$Genes <- rownames(sex_complement_raw_counts)
+sex_complement_raw_counts <- sex_complement_raw_counts %>% relocate(Genes)
+rownames(sex_complement_raw_counts) <- NULL
+write.table(sex_complement_raw_counts, file = "sex_complement_raw_counts.txt", sep = "\t", row.names = FALSE, col.names = TRUE)
+```
+
+# Define Phenotype Subgroups
+
+```{r phenotype-groups}
+pheno_150 <- pheno_150 %>% filter(participant_id %in% colnames(sex_complement_raw_counts))
+Lean_ID <- pheno_150 %>% filter(official_enroll_category == "Lean") %>% pull(participant_id)
+Overweight_ID <- pheno_150 %>% filter(official_enroll_category == "Overweight") %>% pull(participant_id)
+Lean_ID_index <- match(Lean_ID, colnames(sex_complement_raw_counts))
+Overweight_ID_index <- match(Overweight_ID, colnames(sex_complement_raw_counts))
+```
+
+# Normalize & Transform with TRAPR
+
+```{r normalize-trapr}
+Sample <- TRAPR.Data.ReadExpressionTable("sex_complement_raw_counts.txt", sep = "\t", Exp1 = Lean_ID_index, Exp2 = Overweight_ID_index, Tag = c('Lean', 'Overweight'))
+nSample <- TRAPR.Normalize(Sample, Method = "UpperQuartile")
+vst_data <- TRAPR.Transformation.VSN(nSample)
+```
+
+# Create Expression Matrix
+
+```{r vst-matrix}
+glowing_uq_vst <- data.frame(vst_data$CurrentMatrix)
+row.names(glowing_uq_vst) <- vst_data[["CurrentGene"]]
+colnames(glowing_uq_vst) <- vst_data[["CurrentSample"]]
+```
+
+# ComBat Batch Correction
+
+```{r combat-correction}
+pheno_150 <- merge(pheno_150, metaDataGlowing[,c("participant_id","PrepID")], by = "participant_id", all.x = TRUE)
+pheno_150$PrepID[is.na(pheno_150$PrepID)] <- 0
+mod <- model.matrix(~1 + official_enroll_category, data = pheno_150)
+batch <- pheno_150$PrepID
+sex_comp_combat.adj <- ComBat(glowing_uq_vst, batch = batch, mod = mod)
+```
+
+# PCA Visualization
+
+```{r pca-plot}
+PCobj <- prcomp(t(sex_comp_combat.adj), center = TRUE, scale. = TRUE)
+PCs <- data.frame(PCobj$x)
+PCs$PrepID <- pheno_150$PrepID
+PCs$Sex <- pheno_150$childs_sex
+
+g1 <- ggplot(PCs, aes(PC1, PC2, color = factor(PrepID))) +
+  geom_point() + labs(title = "PC by Batch")
+g2 <- ggplot(PCs, aes(PC1, PC2, color = Sex)) +
+  geom_point() + labs(title = "PC by Neonatal Sex")
+grid.arrange(g1, g2, ncol = 2)
+```
+
+# Expression Concordance Plots
+
+```{r compare-expression}
+load("combat.adj.Rdata")
+compare_plot <- function(gene) {
+  df <- data.frame(
+    Original = t(combat.adj[gene,]),
+    SexComplement = t(sex_comp_combat.adj[gene, colnames(combat.adj)]),
+    Sex = pheno_150[colnames(combat.adj),"childs_sex"]
+  )
+  ggplot(df, aes(x = Original, y = SexComplement, color = Sex)) +
+    geom_point() + labs(title = gene)
+}
+compare_plot("XIST")
+compare_plot("DDX3Y")
+compare_plot("ZFY")
+```
+
+# Expression of Sex Genes
+
+```{r sex-gene-expression}
+sex_genes <- t(sex_comp_combat.adj[c("DDX3X", "DDX3Y", "USP9X", "USP9Y", "ZFX", "ZFY"), colnames(combat.adj)])
+sex_genes <- data.frame(sex_genes)
+sex_genes$participant_id <- rownames(sex_genes)
+sex_genes <- merge(sex_genes, pheno_150[colnames(combat.adj), c("childs_sex", "participant_id")], by = "participant_id")
+
+plot_gene_set <- function(prefix) {
+  sex_genes %>%
+    select(-participant_id) %>%
+    pivot_longer(starts_with(prefix), names_to = "genes", values_to = "expression") %>%
+    ggplot(aes(genes, expression)) +
+    geom_jitter(aes(color = childs_sex)) +
+    labs(x = "", y = "Expression") +
+    theme_minimal()
+}
+
+plot_gene_set("DD")
+plot_gene_set("ZF")
+plot_gene_set("USP9")
+```
+
+# Save Objects
+
+```{r save-data, echo=FALSE}
+save(pheno_150, sex_comp_combat.adj, file = "sex_comp_combat_adj_pheno.RData")
