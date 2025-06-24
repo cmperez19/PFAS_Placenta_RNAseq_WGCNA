@@ -61,17 +61,15 @@ for (i in head(names(max))) {
 }
 
 # Compare with original raw counts
-set.seed(110)
 sample <- sample(rownames(sex_complement_raw_counts), 10)
 load("Glowing_RNAse_141QCd.RData")
 GlowingPlacenta_RNAseq.rawCounts <- counts
 
-# Identify shared genes
 shared_genes <- intersect(rownames(GlowingPlacenta_RNAseq.rawCounts), rownames(sex_complement_raw_counts))
 set.seed(110)
 sample <- sample(shared_genes, 10)
 
-# Correlation matrix
+
 cor_matrix <- cor(t(GlowingPlacenta_RNAseq.rawCounts[sample, ]), 
                   t(sex_complement_raw_counts[sample, colnames(GlowingPlacenta_RNAseq.rawCounts)]))
 
