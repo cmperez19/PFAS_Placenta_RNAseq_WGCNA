@@ -5,12 +5,6 @@ library(biomaRt)
 
 load("sex_comp_combat_adj_pheno.RData")
 
-# Filter out low-quality samples
-exclude_ids <- c("G-321", "G-413", "G-174")
-pheno_150 <- pheno_150[!pheno_150$participant_id %in% exclude_ids, ]
-rownames(pheno_150) <- pheno_150$participant_id
-sex_comp_combat.adj <- sex_comp_combat.adj[, !colnames(sex_comp_combat.adj) %in% exclude_ids]
-
 # Remove sex chromosome genes to explore network without sex genes 
 #combat.adj <- t(sex_comp_combat.adj)
 #gene_ids <- colnames(combat.adj)
