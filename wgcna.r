@@ -31,6 +31,38 @@ colors <- labels2colors(cutreeDynamic(hierTOM, distM = dissTOM,
 connectivity <- softConnectivity(datE = combat.adj, power = beta)
 hist(connectivity, xlab = "K Connections", ylab = "Frequency",
      main = "Connectivity Histogram\n(R^2 = 0.80, Spearman, Power = 5)")
+# plot dendogram
+
+plotDendroAndColors(
+  hierTOM, 
+  colors, 
+  groupLabels = NULL, 
+  rowText = NULL,
+  rowTextAlignment = c("left", "center", "right"),
+  rowTextIgnore = NULL,
+  textPositions = NULL,
+  setLayout = TRUE, 
+  autoColorHeight = TRUE, 
+  colorHeight = 0.2, 
+  colorHeightBase = 0.2, 
+  colorHeightMax = 0.6,
+  rowWidths = NULL, 
+  dendroLabels = FALSE, 
+  addGuide = FALSE, guideAll = FALSE, 
+  guideCount = 50, guideHang = 0.2, 
+  addTextGuide = FALSE,
+  cex.colorLabels = 0.8, cex.dendroLabels = 0.9, 
+  cex.rowText = 0.8,
+  marAll = c(1, 5, 3, 1), saveMar = TRUE, 
+  abHeight = NULL, abCol = "lightgreen")
+
+#hub genes 
+chooseTopHubInEachModule(
+  combat.adj, 
+ gene_color$color, 
+  omitColors = "grey", 
+  power = 5, 
+  type = "signed")
 
 # Save module assignments and eigengenes
 gene_color_mrna <- data.frame(gene_name = colnames(combat.adj), color = colors)
